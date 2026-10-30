@@ -1,0 +1,22 @@
+# Wiki-contour tag taxonomy for the LLM Wiki layer.
+# Kept separate from tags.yaml so that wiki schema bumps don't touch the
+# atomic-notes taxonomy and vice versa. wiki_compile.py loads this file
+# (not tags.yaml) when building its prompt and validating ChangeSets.
+version: 1
+tags:
+  wiki:
+    - core
+    - entity
+    - concept
+    - comparison
+    - query
+    - raw
+    - meta
+    - open-question
+    - contradiction
+    - low-confidence
+    - stub
+    - draft
+    - stable
+    - stale
+    - ingested
