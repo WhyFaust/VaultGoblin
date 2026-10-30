@@ -29,4 +29,4 @@ jobs:
       - uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
-      - run: python -m unittest discover -s codex-shared-knowledge/tests -v
+      - run: python -W error::EncodingWarning -X warn_default_encoding -m unittest discover -s codex-shared-knowledge/tests -v

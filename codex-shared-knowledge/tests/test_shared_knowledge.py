@@ -93,7 +93,7 @@ class SharedKnowledgeTests(unittest.TestCase):
         self.assertTrue((home / "skills/codex-shared-knowledge/scripts/install_export_task.ps1").is_file())
         self.assertIn("Keep this.", agents.read_text(encoding="utf-8"))
         self.assertEqual(agents.read_text(encoding="utf-8").count(shared.AGENT_LINE), 1)
-        self.assertEqual(shared.settings(home), (self.vault, "new-pc"))
+        self.assertEqual(shared.settings(home), (self.vault.resolve(), "new-pc"))
 
     def test_install_rejects_another_devices_name(self):
         shared.export(self.home)
@@ -294,7 +294,8 @@ class SharedKnowledgeTests(unittest.TestCase):
     def test_mr_and_pipeline_ids_are_exact_phrases(self):
         self.write_topics(first_title="MR !245 stabilization", first_body="MR !245 fixed pipeline 267627.")
         native = self.native / "MEMORY.md"
-        native.write_text(native.read_text() + "\n# Noise\n\nMR !198, pipeline 245, thread 2453, pipeline 2676279.\n")
+        native.write_text(native.read_text(encoding="utf-8") +
+                          "\n# Noise\n\nMR !198, pipeline 245, thread 2453, pipeline 2676279.\n", encoding="utf-8")
         shared.export(self.home)
         for query in ["MR !245", "pipeline 267627"]:
             matches = shared.search(self.home, query)["matches"]
@@ -318,8 +319,8 @@ class SharedKnowledgeTests(unittest.TestCase):
     def test_project_filter_excludes_another_repository(self):
         self.write_topics(first_body="applies_to: cwd=/home/faust/dev/esensor-aqa;\nScopedUniqueTerm")
         native = self.native / "MEMORY.md"
-        native.write_text(native.read_text().replace("Second useful fact", (
-            "applies_to: cwd=G:\\Work\\Projects\\gitms;\nScopedUniqueTerm")))
+        native.write_text(native.read_text(encoding="utf-8").replace("Second useful fact", (
+            "applies_to: cwd=G:\\Work\\Projects\\gitms;\nScopedUniqueTerm")), encoding="utf-8")
         shared.export(self.home)
         matches = shared.search(self.home, "ScopedUniqueTerm", project="esensor-aqa")["matches"]
         self.assertEqual([item["title"] for item in matches], ["Alpha"])
@@ -363,7 +364,7 @@ class SharedKnowledgeTests(unittest.TestCase):
         note = next(item for item in self.manifest()["notes"] if item["title"] == "Alpha")
         target = self.vault / shared.FOLDER / "devices/first-pc" / note["file"]
         self.assertTrue(shared.search(self.home, "UniqueIndexedLesson")["matches"])
-        target.write_text(target.read_text() + "\nCorrupted\n")
+        target.write_text(target.read_text(encoding="utf-8") + "\nCorrupted\n", encoding="utf-8")
         result = shared.search(self.home, "UniqueIndexedLesson")
         self.assertTrue(result["warnings"])
         self.assertEqual(result["matches"], [])
@@ -403,7 +404,7 @@ class SharedKnowledgeTests(unittest.TestCase):
 
     def test_default_search_returns_at_most_three_notes(self):
         (self.native / "MEMORY.md").write_text("\n".join(
-            f"# Topic {number}\n\nCommonSearchTerm different lesson {number}\n" for number in range(8)))
+            f"# Topic {number}\n\nCommonSearchTerm different lesson {number}\n" for number in range(8)), encoding="utf-8")
         shared.export(self.home)
         self.assertEqual(len(shared.search(self.home, "CommonSearchTerm")["matches"]), 3)
 
@@ -417,7 +418,7 @@ class SharedKnowledgeTests(unittest.TestCase):
     def test_installer_adds_conditional_recall_rule_only_once(self):
         for _ in range(2):
             shared.install(self.vault, "first-pc", self.home)
-        instructions = (self.home / "AGENTS.md").read_text()
+        instructions = (self.home / "AGENTS.md").read_text(encoding="utf-8")
         self.assertEqual(instructions.count(shared.RECALL_START), 1)
         self.assertIn(shared.RECALL_RULE, instructions)
 
@@ -434,7 +435,7 @@ class SharedKnowledgeTests(unittest.TestCase):
         self.assertEqual(topics[0]["project"], "ass")
 
     def test_project_filter_does_not_leak_other_projects_through_global_summary(self):
-        (self.native / 'memory_summary.md').write_text('MR !245 belongs to eSensor.')
+        (self.native / 'memory_summary.md').write_text('MR !245 belongs to eSensor.', encoding='utf-8')
         shared.export(self.home)
         self.assertEqual(shared.recall(self.home, 'MR !245', project='gitms')['notes'], [])
         self.assertTrue(shared.recall(self.home, 'MR !245')['notes'])
@@ -446,11 +447,11 @@ class SharedKnowledgeTests(unittest.TestCase):
             device = letter * 64
             folder = self.vault / shared.FOLDER / 'devices' / device
             folder.mkdir()
-            (folder / 'manifest.json').write_text(json.dumps({'version': 3, 'device': device, 'notes': []}))
+            (folder / 'manifest.json').write_text(json.dumps({'version': 3, 'device': device, 'notes': []}), encoding='utf-8')
         environment = os.environ.copy()
         environment['CODEX_HOME'] = str(self.home)
         result = subprocess.run([sys.executable, str(SCRIPT), 'read', note_id, '--max-chars', '800'],
-                                env=environment, capture_output=True, text=True, timeout=3, check=True)
+                                env=environment, capture_output=True, text=True, encoding='utf-8', timeout=3, check=True)
         self.assertLessEqual(len(result.stdout), 800)
         response = json.loads(result.stdout)
         self.assertTrue(response['warnings'])
@@ -519,16 +520,16 @@ class SharedKnowledgeTests(unittest.TestCase):
         original = shared.search(self.home, 'UniqueIndexedLesson')['matches'][0]
         path = Path(original['file'])
         stamp = path.stat()
-        path.write_text(path.read_text().replace('AAAA', 'BBBB'))
+        path.write_text(path.read_text(encoding='utf-8').replace('AAAA', 'BBBB'), encoding='utf-8')
         os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
         result = shared.search(self.home, 'UniqueIndexedLesson')
         self.assertEqual(result['matches'], [])
         self.assertTrue(result['warnings'])
-        self.assertIn('BBBB', path.read_text())
+        self.assertIn('BBBB', path.read_text(encoding='utf-8'))
 
     def test_warm_default_search_verifies_at_most_three_sources(self):
         (self.native / 'MEMORY.md').write_text('\n'.join(
-            f'# Topic {number}\n\nCommonSearchTerm lesson {number}\n' for number in range(8)))
+            f'# Topic {number}\n\nCommonSearchTerm lesson {number}\n' for number in range(8)), encoding='utf-8')
         shared.export(self.home)
         shared.search(self.home, 'CommonSearchTerm')
         with patch.object(shared, 'read_record', wraps=shared.read_record) as read:
@@ -540,7 +541,7 @@ class SharedKnowledgeTests(unittest.TestCase):
         shared.export(self.home)
         devices = self.vault / shared.FOLDER / 'devices'
         for name in ['README.md', 'my-notes.md']:
-            (devices / name).write_text('UnrelatedUniqueManualNote\n')
+            (devices / name).write_text('UnrelatedUniqueManualNote\n', encoding='utf-8')
         result = shared.search(self.home, 'SQLite')
         self.assertTrue(result['matches'])
         self.assertEqual(result['warnings'], [])
