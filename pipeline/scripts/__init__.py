@@ -1,0 +1,1 @@
+# VaultGoblin scripts package

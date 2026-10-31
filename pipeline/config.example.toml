@@ -1,0 +1,68 @@
+# VaultGoblin Configuration
+# Copy to config.toml and fill in your values
+
+[vault]
+vault_path = "/path/to/your/obsidian/vault"
+notes_folder = "Research & Insights"       # atomic notes destination
+moc_folder = "Guides & Overviews"          # MOC files destination
+source_folder = "Sources"                   # source document references
+contacts_folder = "Networking"              # contact notes destination
+
+[rclone]
+remote = "gdrive:"                          # rclone remote name (check: rclone listremotes)
+staging_dir = ""                            # empty: OS temporary folder / vaultgoblin / staging
+
+[notebooklm]
+# NotebookLM profile name for multi-account setups (optional).
+# Run `notebooklm profile list` to see available profiles.
+# Leave empty to use the default profile set up by `notebooklm login`.
+profile = ""
+
+# Whether to fetch indexed source fulltext alongside curated notes (optional).
+include_sources = false
+
+# Whether to attach existing mind map(s) as a topic-hierarchy section (optional).
+include_mindmap = false
+
+[wiki]
+# Folder inside vault_path that holds every LLM Wiki space.
+# Each <wiki_folder>/<project-slug>/ is a self-contained compiled
+# knowledge layer. Stays isolated from atomic notes / MOCs / contacts.
+wiki_folder = "LLM Wiki"
+
+# Default mode for `wiki_init.py` when --mode is not passed.
+# project — fixed core pages (overview/architecture/components/...)
+# corpus  — only entities/concepts/... grow as raw is ingested
+default_mode = "project"
+
+# Default template language for `wiki_init.py` when --lang is not passed.
+# Supported: "en" (English) and "ru" (Russian). Each language has its own
+# templates/wiki/<lang>/ tree shipped with the repo. Pages created under
+# different langs coexist fine — the choice only affects on-disk prose
+# of meta files (SCHEMA.md, index.md, log.md, raw/_README.md) and the
+# initial core-page stubs.
+default_lang = "en"
+
+# Hard cap on raw inputs per `wiki_compile.py` invocation. Above this,
+# the script exits with WIKI_RAW_LIMIT_EXCEEDED and asks the user to
+# compile in batches.
+max_raw_per_compile = 30
+
+[memory]
+# FTS5 full-text memory over the whole vault (replaces the legacy
+# Smart Connections embedding layer). Zero dependencies: stdlib sqlite3.
+enabled = true
+
+# Where the SQLite index lives. Empty → ~/.cache/vaultgoblin/
+# (one db per vault, named <vault-slug>-<hash>.db). The index is always
+# OUTSIDE the vault so vault sync (gdrive/iCloud/...) never touches it.
+db_dir = ""
+
+# "unicode61" (default — compact, word-level, Cyrillic-safe) or
+# "trigram" (substring matching like pg_trgm; needs SQLite >= 3.34,
+# index is noticeably larger).
+tokenizer = "unicode61"
+
+# Refresh the index automatically after each vault_writer write.
+# First build is always explicit: scripts/memory_index.py build (or migrate.py).
+auto_update = true

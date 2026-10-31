@@ -1,108 +1,102 @@
+<div align="center">
+
 # 🧌 VaultGoblin
 
 **Гоблин, который таскает полезные знания между твоими ПК.**
 
-Документы и заметки превращаются в связанную Wiki внутри Obsidian. Codex может
-вспоминать решения с другого устройства коротким поисковым запросом: выдача
-ограничена по размеру, а исходные заметки остаются в твоём vault.
+Русский | [English](README_en.md)
 
-| Компонент | Задача |
-| --- | --- |
-| [`dataweave/`](dataweave/) | Импорт документов и NotebookLM, атомарные заметки, Wiki, локальный поиск по vault. |
-| [`codex-shared-knowledge/`](codex-shared-knowledge/) | Экспорт знаний Codex, перенос через Obsidian и короткие проверенные фрагменты для работы на другом ПК. |
+[![Tests](https://github.com/WhyFaust/VaultGoblin/actions/workflows/tests.yml/badge.svg)](https://github.com/WhyFaust/VaultGoblin/actions/workflows/tests.yml)
+![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+[![MIT](https://img.shields.io/badge/License-MIT-6f9e37)](LICENSE)
+![Local first](https://img.shields.io/badge/Local-first-7c5cbf)
 
-Синхронизацию папки Obsidian выполняет уже настроенный Remotely Save или другой
-выбранный тобой механизм. Каждый ПК хранит собственный поисковый индекс.
+</div>
 
-## Быстрый старт
+Общие знания Codex между компьютерами и связанная Wiki в Obsidian. VaultGoblin
+экспортирует локальную память небольшими темами со стабильными ID, помогает
+вспомнить решения с другого устройства и превращает выбранные документы в заметки.
 
-Нужны Python 3.10+, SQLite с FTS5 и Obsidian vault. Для Wiki-компиляции нужен
-авторизованный Codex или Claude CLI; для Google Drive и NotebookLM — их отдельная
-локальная настройка. Общий поиск Codex работает на стандартной библиотеке Python.
+Работает с вашим vault и его настроенной синхронизацией. Поиск выполняется локально,
+без сервера, эмбеддингов и вызовов модели. Компиляция Wiki запускается отдельно
+через авторизованный CLI модели.
+
+```mermaid
+flowchart LR
+    A["🧠 Память Codex"] --> B["🧌 Темы со стабильными ID"]
+    B --> C["💎 Синхронизация через Obsidian"]
+    C --> D["🔎 Контекст на другом ПК"]
+```
+
+## 🚀 Быстрый старт
+
+Нужны Python 3.10+ с SQLite FTS5 и уже синхронизируемый Obsidian vault:
 
 ```bash
 git clone https://github.com/WhyFaust/VaultGoblin.git
 cd VaultGoblin
-```
-
-### Общие знания Codex между ПК
-
-На каждом устройстве установи навык, указав местный путь к vault и уникальное имя:
-
-```bash
-python3 codex-shared-knowledge/scripts/shared_knowledge.py install \
+python3 skills/codex-shared-knowledge/scripts/shared_knowledge.py install \
   --vault "/путь/к/Obsidian Vault" --device main-pc
-
-python3 codex-shared-knowledge/scripts/shared_knowledge.py export
-python3 codex-shared-knowledge/scripts/shared_knowledge.py recall "SQLite" --project my-project
+python3 skills/codex-shared-knowledge/scripts/shared_knowledge.py export
 ```
 
-На Windows используй `python`. Если устройство уже настроено, возьми его имя
-из местного `CODEX_HOME/shared-knowledge.json`. На втором ПК укажи его собственный
-путь к тому же синхронизируемому vault и другое имя устройства.
+На Windows используйте `python` вместо `python3`. На другом ПК укажите местный путь
+к тому же vault и другое имя устройства. При обновлении сохраняйте прежнее имя
+из `~/.codex/shared-knowledge.json`.
 
-`recall` возвращает до двух фрагментов, `search` — до трёх указателей.
-Полный JSON по умолчанию ограничен 6000 символами. При готовом индексе перед выдачей
-сверяются только выбранные 1–3 источника. `--project` задаёт строгий фильтр;
-для общего контекста его можно опустить. Индекс обновляется при изменении файлов,
-экспорт запускается отдельно. Подробности: [установка и автоэкспорт](docs/shared-knowledge.md).
+После установки откройте новый чат Codex. Например:
 
-### Документы и Wiki
+```text
+Вспомни, что мы решили о миграции SQLite в проекте my-project.
+Сверь найденное с текущим кодом и предложи следующий шаг.
+```
 
-Для Linux/macOS:
+Установщик добавляет навык и небольшой блок условного поиска в `AGENTS.md`.
+Исходная память Codex остаётся локальной; если она ещё не создана, можно читать
+знания другого устройства. [Установка, автоэкспорт и второй ПК](docs/usage.md).
+
+## ✨ Что можно поручить
+
+| Задача | Что делает VaultGoblin |
+|---|---|
+| Вспомнить решение с другого ПК | Ищет только в общем слое Codex, возвращает короткие фрагменты с источниками |
+| Сохранить историю проекта | Экспортирует темы со стабильными ID и ссылками; исчезнувшие темы помечает архивными |
+| Собрать Wiki | Принимает выбранные источники и объединяет их с существующими страницами |
+| Разобрать документ или NotebookLM | Создаёт атомарные заметки, карту содержания и связи |
+| Найти заметку в vault | Использует отдельный локальный полнотекстовый индекс после явной настройки |
+
+Общий поиск Codex не обходит личные заметки вне `Codex Knowledge/devices`.
+Широкий поиск по vault и обработка документов относятся к отдельному пайплайну
+и запускаются по задаче. Исторические сведения нужно сверять с текущими источниками.
+
+## 🗂️ Устройство проекта
+
+| Путь | Содержимое |
+|---|---|
+| [skills/codex-shared-knowledge/](skills/codex-shared-knowledge/SKILL.md) | Устанавливаемый навык, экспорт и ограниченный поиск общих знаний |
+| [pipeline/](pipeline/AGENTS.md) | Импорт, Wiki, правила, промпты, шаблоны и тесты |
+| [docs/usage.md](docs/usage.md) | Установка, обновление и перенос между устройствами |
+| [docs/shared-knowledge.md](docs/shared-knowledge.md) | Формат тем, поиск, архив и восстановление |
+| [docs/pipeline.md](docs/pipeline.md) | Документы, NotebookLM, Wiki и обслуживание vault |
+| [docs/automation.md](docs/automation.md) | Хуки и резервный автоэкспорт |
+| [docs/comparison.md](docs/comparison.md) | Сравнение с близкими инструментами |
+| [docs/audit.md](docs/audit.md) | Независимый аудит и исправления |
+| [docs/development.md](docs/development.md) | Проверки, структура и локальные данные |
+
+Git-клон — источник кода. Путь к нему сохраняется как `repository_path` в местных
+настройках; установленный навык — рабочая копия. Авторизация, пути, заметки,
+экспорты и SQLite-базы в Git не входят.
+
+## 🧪 Проверка
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r dataweave/requirements.txt
-cp dataweave/config.example.toml dataweave/config.toml
+python3 -m unittest discover -s skills/codex-shared-knowledge/tests -q
 ```
 
-Укажи свой `vault_path` в `dataweave/config.toml`, затем создай пространство:
+Проверки импорта и Wiki требуют отдельного окружения; команды для Linux и Windows
+приведены в [руководстве разработчика](docs/development.md). CI проверяет оба
+компонента на Linux и Windows без реальных заметок и вызовов модели.
 
-```bash
-.venv/bin/python dataweave/scripts/wiki_init.py my-project \
-  --mode project --title "Мой проект" --lang ru
+## 📜 Лицензия
 
-.venv/bin/python dataweave/scripts/wiki_ingest.py my-project \
-  /путь/к/источнику.md --kind docs --no-compile
-```
-
-Компиляция выполняется отдельной командой и обращается к выбранной модели:
-
-```bash
-.venv/bin/python dataweave/scripts/wiki_compile.py my-project --since-last-compile
-.venv/bin/python dataweave/scripts/wiki_lint.py my-project --strict
-```
-
-Обработанные источники учитываются в переносимом журнале внутри vault.
-Запись Wiki сохраняет существующие ссылки и проверяет, что исходные файлы
-не изменились во время обработки. Подробные сценарии: [документация DataWeave](dataweave/README.md).
-
-## Локальные данные
-
-Настройки с реальными путями, авторизация, заметки, экспорты устройств, журнал
-обработки и SQLite-индексы создаются локально и исключены из Git.
-Исходные `memory_summary.md` и `MEMORY.md` остаются под управлением Codex;
-экспорт создаёт отдельный справочный слой в Obsidian. Исторические сведения
-из него нужно проверять по актуальному коду и сервисам.
-
-## Проверка
-
-```bash
-python3 -m pip install pytest -r dataweave/requirements.txt
-cd dataweave
-python3 -m pytest -q
-cd ..
-python3 -m unittest discover -s codex-shared-knowledge/tests -v
-```
-
-При подготовке этой версии на Linux прошли 243 теста DataWeave и 48 тестов
-общих знаний. GitHub Actions повторяет проверки при изменениях; общий поиск
-также проверяется на Windows. Тесты используют временные данные.
-
-## Происхождение
-
-VaultGoblin — отдельный проект, который объединяет локально доработанный
-[ObsidianDataWeave](https://github.com/howdeploy/ObsidianDataWeave) и навык
-общих знаний Codex. Авторство и MIT-лицензия исходного проекта сохранены:
-[LICENSE](LICENSE), [THIRD_PARTY.md](THIRD_PARTY.md).
+[MIT](LICENSE). Уведомления об авторстве сохранены в лицензии.

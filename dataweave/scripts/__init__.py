@@ -1,1 +1,0 @@
-# ObsidianDataWeave scripts package

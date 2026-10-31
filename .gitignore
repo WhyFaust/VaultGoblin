@@ -8,6 +8,7 @@ storage_state.json
 processed.json
 dedup_reviewed.json
 similar_fix_reviewed.json
+wiki_compile_state.json
 devices/
 memories/
 backups/
@@ -23,14 +24,18 @@ Codex Knowledge/
 # Python and local tooling
 .venv/
 venv/
+env/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.cache/
 *.egg-info/
 dist/
 build/
 .idea/
 .vscode/
+*.swp
+*.swo
 .DS_Store
 Thumbs.db
 
