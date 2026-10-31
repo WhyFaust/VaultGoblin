@@ -1,0 +1,840 @@
+"""Tests for scripts/wiki_compile.py — no live backend or vault writes."""
+
+import json
+import hashlib
+import shutil
+from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
+
+from scripts import wiki_compile
+from scripts.wiki_compile import (
+    ValidationError,
+    _compute_post_compile_pages,
+    _detect_index_lang_and_title,
+    _extract_wikilink_targets,
+    _render_index_markdown,
+    _split_frontmatter,
+    _strip_outer_code_fence,
+    materialize_to_staging,
+    regenerate_index_to_staging,
+    select_raw_inputs,
+    snapshot_wiki_space,
+    validate_changeset,
+)
+from scripts.wiki_models import ChangeSet, WikiPage, WikiPageUpdate
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _good_fm(slug: str, page_type: str, stem: str, status: str = "draft") -> dict:
+    return {
+        "note_type": "wiki",
+        "wiki_project": slug,
+        "wiki_page_type": page_type,
+        "wiki_status": status,
+        "date": "2026-05-15",
+        "source_doc": f"wiki:{slug}:{page_type}:{stem}",
+    }
+
+
+def _seed_space(root: Path) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    schema = (
+        "---\n"
+        "note_type: wiki\nwiki_project: demo\nwiki_page_type: meta\n"
+        "wiki_status: stable\ndate: 2026-05-15\nwiki_mode: project\n"
+        "source_doc: \"wiki:demo:meta:SCHEMA\"\n---\n\n# SCHEMA\n"
+    )
+    (root / "SCHEMA.md").write_text(schema, encoding="utf-8")
+    arch = (
+        "---\n"
+        "note_type: wiki\nwiki_project: demo\nwiki_page_type: core\n"
+        "wiki_status: draft\ndate: 2026-05-15\n"
+        "source_doc: \"wiki:demo:core:architecture\"\n---\n\n"
+        "# Architecture\n\nLinks to [[postgres]] and [[redis]].\n"
+    )
+    (root / "pages" / "architecture.md").parent.mkdir(parents=True, exist_ok=True)
+    (root / "pages" / "architecture.md").write_text(arch, encoding="utf-8")
+    pg = (
+        "---\nnote_type: wiki\nwiki_project: demo\nwiki_page_type: entity\n"
+        "wiki_status: draft\ndate: 2026-05-15\n"
+        "source_doc: \"wiki:demo:entity:postgres\"\n---\n\n# Postgres\n"
+    )
+    (root / "entities" / "postgres.md").parent.mkdir(parents=True, exist_ok=True)
+    (root / "entities" / "postgres.md").write_text(pg, encoding="utf-8")
+    rd = pg.replace("postgres", "redis").replace("Postgres", "Redis")
+    (root / "entities" / "redis.md").write_text(rd, encoding="utf-8")
+    raw = (
+        "---\nnote_type: wiki\nwiki_project: demo\nwiki_page_type: raw\n"
+        "wiki_status: ingested\ndate: 2026-05-15\n"
+        "source_doc: \"wiki:demo:raw:notes\"\n---\n\n# notes\n"
+    )
+    (root / "raw" / "docs" / "notes.md").parent.mkdir(parents=True, exist_ok=True)
+    (root / "raw" / "docs" / "notes.md").write_text(raw, encoding="utf-8")
+
+
+# ── Pure helpers ─────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("relative", ["raw/docs/notes.md", "SCHEMA.md", "index.md", "log.md"])
+@pytest.mark.parametrize("operation", ["creates", "updates"])
+def test_model_cannot_write_raw_or_meta(tmp_path, relative, operation):
+    _seed_space(tmp_path)
+    snapshot = snapshot_wiki_space(tmp_path)
+    page_type = "raw" if relative.startswith("raw/") else "meta"
+    fm = _good_fm(snapshot["slug"], page_type, Path(relative).stem)
+    changes = ChangeSet(project=snapshot["slug"], compile_id="fixture")
+    page = WikiPage(relative, fm, "# Changed") if operation == "creates" else WikiPageUpdate(relative, [], fm, "# Changed")
+    getattr(changes, operation).append(page)
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*.md")}
+    with pytest.raises(ValidationError) as result:
+        validate_changeset(changes, snapshot)
+    assert result.value.marker == "WIKI_WRITE_FORBIDDEN"
+    assert all(p.read_bytes() == content for p, content in before.items())
+
+
+def test_entity_titles_include_existing_and_updated_pages(tmp_path):
+    root = tmp_path / "demo"
+    _seed_space(root)
+    snapshot = snapshot_wiki_space(root)
+    changes = ChangeSet(project=snapshot["slug"], compile_id="fixture")
+    changes.creates.append(WikiPage("entities/other.md", _good_fm(snapshot["slug"], "entity", "other"), "# POSTGRES"))
+    with pytest.raises(ValidationError, match="duplicates"):
+        validate_changeset(changes, snapshot)
+    fm = snapshot["pages"]["entities/postgres.md"]["frontmatter"]
+    changes.updates.append(WikiPageUpdate("entities/postgres.md", [], fm, "# Postgres Legacy"))
+    validate_changeset(changes, snapshot)
+
+
+def test_unsupported_rename_fails_before_staging(tmp_path):
+    _seed_space(tmp_path)
+    snapshot = snapshot_wiki_space(tmp_path)
+    changes = ChangeSet(project=snapshot["slug"], compile_id="fixture")
+    changes.renames.append({"from": "entities/postgres.md", "to": "entities/new.md"})
+    with pytest.raises(ValidationError, match="renames are not supported"):
+        validate_changeset(changes, snapshot)
+    with pytest.raises(ValidationError, match="renames are not supported"):
+        _compute_post_compile_pages(snapshot, changes)
+
+
+def test_prompt_sends_selected_raw_once_and_omits_old_raw_bodies():
+    snapshot = {"slug": "demo", "pages": {
+        "raw/docs/selected.md": {"frontmatter": {}, "body": "SELECTED_RAW_BODY_123"},
+        "raw/docs/previous.md": {"frontmatter": {}, "body": "PREVIOUS_RAW_BODY_456"},
+        "pages/overview.md": {"frontmatter": {}, "body": "EXISTING_PAGE_BODY_789"},
+    }}
+    before = json.dumps(snapshot, sort_keys=True)
+    raw_batch = select_raw_inputs(snapshot, since_last_compile=True, raw_only_glob="raw/docs/selected.md")
+    for batch in (raw_batch, []):
+        prompt = wiki_compile.assemble_prompt(snapshot=snapshot, raw_batch=batch, mode="project", update_only=False)
+        assert prompt.count("SELECTED_RAW_BODY_123") == (1 if batch else 0)
+        assert "PREVIOUS_RAW_BODY_456" not in prompt
+        assert prompt.count("EXISTING_PAGE_BODY_789") == 1
+        assert "raw/docs/previous.md" in prompt
+        assert json.dumps(snapshot, sort_keys=True) == before
+
+
+class TestExtractWikilinks:
+    def test_basic(self):
+        assert _extract_wikilink_targets("hello [[foo]] world") == {"foo"}
+
+    def test_strips_aliases_and_headings(self):
+        assert _extract_wikilink_targets("[[foo|alias]] [[bar#heading]]") == {"foo", "bar"}
+
+    def test_empty(self):
+        assert _extract_wikilink_targets("no links here") == set()
+
+    def test_ignores_inline_code(self):
+        assert _extract_wikilink_targets("real [[foo]] vs prose `[[bar]]`") == {"foo"}
+
+    def test_ignores_fenced_code(self):
+        text = "real [[foo]]\n\n```markdown\n[[bar]]\n```\n"
+        assert _extract_wikilink_targets(text) == {"foo"}
+
+
+class TestStripOuterCodeFence:
+    def test_plain_json_passes_through(self):
+        assert _strip_outer_code_fence('{"a": 1}') == '{"a": 1}'
+
+    def test_strips_json_fence(self):
+        text = '```json\n{"a": 1}\n```'
+        assert _strip_outer_code_fence(text) == '{"a": 1}'
+
+    def test_strips_plain_fence(self):
+        text = '```\n{"a": 1}\n```'
+        assert _strip_outer_code_fence(text) == '{"a": 1}'
+
+    def test_preserves_inner_fences(self):
+        """Body strings often contain ``` examples that must survive."""
+        inner = '{"body": "see ```\\nexample\\n``` here"}'
+        wrapped = f"```json\n{inner}\n```"
+        assert _strip_outer_code_fence(wrapped) == inner
+
+    def test_no_fence_returns_stripped(self):
+        assert _strip_outer_code_fence("  hello  ") == "hello"
+
+
+class TestSplitFrontmatter:
+    def test_embedded_delimiter_preserves_metadata_and_body(self):
+        text = '---\nsource_doc: "foo---bar"\n---\n\nBody\n---\nEnd'
+        assert _split_frontmatter(text) == ({"source_doc": "foo---bar"}, "Body\n---\nEnd")
+
+    def test_round_trip(self):
+        text = "---\nfoo: 1\n---\n\nbody"
+        fm, body = _split_frontmatter(text)
+        assert fm == {"foo": 1}
+        assert body == "body"
+
+    def test_no_frontmatter(self):
+        fm, body = _split_frontmatter("just body")
+        assert fm == {}
+        assert body == "just body"
+
+
+# ── Snapshot ─────────────────────────────────────────────────────────────────
+
+
+class TestSnapshot:
+    def test_snapshot_collects_pages_and_links(self, tmp_path: Path):
+        root = tmp_path / "demo"
+        _seed_space(root)
+        snap = snapshot_wiki_space(root)
+        assert snap["exists"] is True
+        assert snap["mode"] == "project"
+        assert "pages/architecture.md" in snap["pages"]
+        assert set(snap["existing_links"]["pages/architecture.md"]) == {"postgres", "redis"}
+
+    def test_snapshot_missing_root(self, tmp_path: Path):
+        snap = snapshot_wiki_space(tmp_path / "nope")
+        assert snap["exists"] is False
+        assert snap["pages"] == {}
+
+
+# ── Raw selection ────────────────────────────────────────────────────────────
+
+
+class TestSelectRaw:
+    def test_readme_is_not_an_input_and_raw_status_does_not_prove_consumption(self, tmp_path: Path):
+        root = tmp_path / "demo"
+        _seed_space(root)
+        (root / "raw/_README.md").write_text("Layout instructions", encoding="utf-8")
+        raw = root / "raw/docs/notes.md"
+        raw.write_text(raw.read_text().replace("wiki_status: ingested", "wiki_status: stable"))
+        snapshot = snapshot_wiki_space(root)
+        assert [item["rel_path"] for item in select_raw_inputs(
+            snapshot, since_last_compile=True, raw_only_glob=None)] == ["raw/docs/notes.md"]
+
+    @pytest.mark.parametrize("ledger", [{"../outside.md": "f" * 64}, {"raw/docs/notes.md": "invalid"}])
+    def test_invalid_portable_ledger_fails_explicitly(self, tmp_path: Path, ledger):
+        root = tmp_path / "demo"
+        _seed_space(root)
+        snapshot = snapshot_wiki_space(root)
+        snapshot["compiled_raws"] = ledger
+        with pytest.raises(ValueError, match="Invalid compiled_raws"):
+            select_raw_inputs(snapshot, since_last_compile=True, raw_only_glob=None)
+
+    @pytest.mark.parametrize("include_content_hash", [False, True])
+    def test_recognizes_both_historical_fingerprint_formats(self, tmp_path: Path, include_content_hash: bool):
+        root = tmp_path / "demo"
+        _seed_space(root)
+        snapshot = snapshot_wiki_space(root)
+        page = dict(snapshot["pages"]["raw/docs/notes.md"])
+        if not include_content_hash:
+            page.pop("content_hash")
+        digest = hashlib.sha256(json.dumps(page, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+        snapshot["compiled_raws"] = {"raw/docs/notes.md": digest}
+        assert select_raw_inputs(snapshot, since_last_compile=True, raw_only_glob=None) == []
+        snapshot["pages"]["raw/docs/notes.md"]["body"] += "New evidence"
+        snapshot["pages"]["raw/docs/notes.md"]["content_hash"] = "f" * 64
+        assert select_raw_inputs(snapshot, since_last_compile=True, raw_only_glob=None)
+
+    def test_portable_ledger_survives_another_vault_path(self, tmp_path: Path):
+        first = tmp_path / "first-pc" / "demo"
+        _seed_space(first)
+        snapshot = snapshot_wiki_space(first)
+        batch = select_raw_inputs(snapshot, since_last_compile=True, raw_only_glob=None)
+        cs = ChangeSet(project="demo", compile_id="x")
+        cs.log_entry.raws_consumed = ["raw/docs/notes.md"]
+        staging = tmp_path / "staging"
+        wiki_compile._append_log_to_staging(staging, "demo", snapshot, cs, "fixture", 0, batch)
+        (first / "log.md").write_bytes((staging / "log.md").read_bytes())
+        second = tmp_path / "second-pc" / "demo"
+        shutil.copytree(first, second)
+        assert snapshot_wiki_space(second)["compiled_raws_version"] == 2
+        assert select_raw_inputs(snapshot_wiki_space(second), since_last_compile=True, raw_only_glob=None) == []
+
+    def test_migration_imports_only_matching_local_confirmations(self, tmp_path: Path, monkeypatch):
+        root = tmp_path / "demo"
+        _seed_space(root)
+        snapshot = snapshot_wiki_space(root)
+        legacy = tmp_path / "legacy.json"
+        data = {"version": 1, "spaces": {root.resolve().as_posix(): {"compile_id": "x", "raws": {
+            "raw/docs/notes.md": snapshot["pages"]["raw/docs/notes.md"]["content_hash"],
+            "raw/docs/missing.md": "f" * 64,
+        }}}}
+        legacy.write_text(json.dumps(data), encoding="utf-8")
+        monkeypatch.setattr(wiki_compile, "COMPILE_STATE_PATH", legacy)
+        migrated = wiki_compile.migrate_compile_state(snapshot, root)
+        assert set(migrated["compiled_raws"]) == {"raw/docs/notes.md"}
+        assert not snapshot["compiled_raws"]
+        assert json.loads(legacy.read_text(encoding="utf-8")) == data
+        assert select_raw_inputs(migrated, since_last_compile=True, raw_only_glob=None) == []
+        data["spaces"][root.resolve().as_posix()]["raws"]["raw/docs/notes.md"] = "e" * 64
+        legacy.write_text(json.dumps(data), encoding="utf-8")
+        assert not wiki_compile.migrate_compile_state(snapshot, root)["compiled_raws"]
+
+    def test_corrupt_legacy_migration_fails_without_resetting_state(self, tmp_path: Path, monkeypatch):
+        state = tmp_path / "legacy.json"
+        state.write_text('{"version": 1, "spaces": []}', encoding="utf-8")
+        before = state.read_bytes()
+        monkeypatch.setattr(wiki_compile, "COMPILE_STATE_PATH", state)
+        with pytest.raises(ValueError, match="Invalid legacy"):
+            wiki_compile.load_compile_state()
+        assert state.read_bytes() == before
+
+    def test_consumed_raw_is_skipped_only_after_writer_pass(self, tmp_path: Path):
+        root = tmp_path / "demo"
+        _seed_space(root)
+        raw_path = root / "raw/docs/notes.md"
+        original = raw_path.read_bytes()
+        snapshot = snapshot_wiki_space(root)
+        batch = select_raw_inputs(snapshot, since_last_compile=True, raw_only_glob=None)
+        cs = ChangeSet(project="demo", compile_id="x")
+        cs.log_entry.raws_consumed = ["raw/docs/notes.md"]
+        staging = tmp_path / "staging"
+        wiki_compile._append_log_to_staging(staging, "demo", snapshot, cs, "fixture", 0, batch)
+        assert select_raw_inputs(snapshot_wiki_space(root), since_last_compile=True, raw_only_glob=None)
+        (root / "log.md").write_bytes((staging / "log.md").read_bytes())
+        snapshot = snapshot_wiki_space(root)
+        assert select_raw_inputs(snapshot, since_last_compile=True, raw_only_glob=None) == []
+        assert select_raw_inputs(snapshot, since_last_compile=True, raw_only_glob="raw/docs/*.md")
+        assert raw_path.read_bytes() == original
+        raw_path.write_bytes(original + b"\nNew evidence\n")
+        assert select_raw_inputs(snapshot_wiki_space(root), since_last_compile=True, raw_only_glob=None)
+
+    def test_since_last_compile_picks_ingested(self, tmp_path: Path):
+        root = tmp_path / "demo"
+        _seed_space(root)
+        snap = snapshot_wiki_space(root)
+        chosen = select_raw_inputs(snap, since_last_compile=True, raw_only_glob=None)
+        assert len(chosen) == 1
+        assert chosen[0]["rel_path"] == "raw/docs/notes.md"
+
+    def test_raw_only_glob(self, tmp_path: Path):
+        root = tmp_path / "demo"
+        _seed_space(root)
+        snap = snapshot_wiki_space(root)
+        chosen = select_raw_inputs(snap, since_last_compile=False, raw_only_glob="raw/docs/*.md")
+        assert len(chosen) == 1
+
+
+# ── validate_changeset ───────────────────────────────────────────────────────
+
+
+def _snap(tmp_path: Path) -> dict:
+    root = tmp_path / "demo"
+    _seed_space(root)
+    return snapshot_wiki_space(root)
+
+
+class TestValidateChangeset:
+    @pytest.mark.parametrize("destination_exists", [False, True])
+    def test_update_cannot_change_writer_destination(self, tmp_path: Path, destination_exists):
+        snap = _snap(tmp_path)
+        if destination_exists:
+            snap["pages"]["entities/architecture.md"] = {
+                "frontmatter": _good_fm("demo", "entity", "architecture"),
+                "body": "# Other architecture\n[[redis]]",
+            }
+            snap["existing_links"]["entities/architecture.md"] = ["redis"]
+        cs = ChangeSet(
+            project="demo", compile_id="x",
+            updates=[WikiPageUpdate(
+                rel_path="pages/architecture.md",
+                expected_existing_links=["postgres", "redis"],
+                frontmatter=_good_fm("demo", "entity", "architecture"),
+                body="# Architecture\n[[postgres]] [[redis]]",
+            )],
+        )
+        with pytest.raises(ValidationError, match="must use routed path 'entities/architecture.md'") as exc:
+            validate_changeset(cs, snap)
+        assert exc.value.exit_code == 3
+        assert exc.value.marker == "WIKI_VALIDATION_FAILED"
+
+    def test_valid_changeset_passes(self, tmp_path: Path):
+        snap = _snap(tmp_path)
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            updates=[
+                WikiPageUpdate(
+                    rel_path="pages/architecture.md",
+                    expected_existing_links=["postgres", "redis"],
+                    frontmatter=_good_fm("demo", "core", "architecture"),
+                    body="# Architecture\n\n[[postgres]] and [[redis]] still here.",
+                )
+            ],
+        )
+        validate_changeset(cs, snap)  # should not raise
+
+    def test_wrong_project_slug(self, tmp_path: Path):
+        snap = _snap(tmp_path)
+        cs = ChangeSet(project="other", compile_id="x")
+        with pytest.raises(ValidationError, match="does not match snapshot slug"):
+            validate_changeset(cs, snap)
+
+    def test_update_to_unknown_page(self, tmp_path: Path):
+        snap = _snap(tmp_path)
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            updates=[
+                WikiPageUpdate(
+                    rel_path="pages/ghost.md",
+                    expected_existing_links=[],
+                    frontmatter=_good_fm("demo", "core", "ghost"),
+                    body="# Ghost\n",
+                )
+            ],
+        )
+        with pytest.raises(ValidationError, match="does not exist in snapshot"):
+            validate_changeset(cs, snap)
+
+    @pytest.mark.parametrize(
+        "rel_path,page_type,stem",
+        [
+            ("pages/architecture.md", "core", "architecture"),
+            ("drafts/architecture.md", "core", "architecture"),
+            ("./pages/architecture.md", "core", "architecture"),
+            ("entities/postgres.md", "entity", "postgres"),
+        ],
+    )
+    def test_create_cannot_replace_existing_page(self, tmp_path: Path, rel_path, page_type, stem):
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[WikiPage(
+                rel_path=rel_path,
+                frontmatter=_good_fm("demo", page_type, stem),
+                body="# Replacement\n\n[[postgres]]",
+            )],
+        )
+        with pytest.raises(ValidationError, match=r"already exists in snapshot.*use updates\[\]") as exc:
+            validate_changeset(cs, _snap(tmp_path))
+        assert exc.value.exit_code == 3
+        assert exc.value.marker == "WIKI_VALIDATION_FAILED"
+
+    @pytest.mark.parametrize(
+        "rel_path,page_type,stem",
+        [("entities/kafka.md", "entity", "kafka"),
+         ("concepts/architecture.md", "concept", "architecture")],
+    )
+    def test_create_new_page_passes(self, tmp_path: Path, rel_path, page_type, stem):
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[WikiPage(
+                rel_path=rel_path,
+                frontmatter=_good_fm("demo", page_type, stem),
+                body="# New page\n\n[[postgres]]",
+            )],
+        )
+        validate_changeset(cs, _snap(tmp_path))
+
+    def test_unresolved_wikilink_fails(self, tmp_path: Path):
+        snap = _snap(tmp_path)
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[
+                WikiPage(
+                    rel_path="entities/kafka.md",
+                    frontmatter=_good_fm("demo", "entity", "kafka"),
+                    body="# Kafka\n\nSee [[mystery-page]] for details.",
+                )
+            ],
+        )
+        with pytest.raises(ValidationError, match="\\[\\[mystery-page\\]\\]"):
+            validate_changeset(cs, snap)
+
+    def test_open_question_marker_resolves(self, tmp_path: Path):
+        snap = _snap(tmp_path)
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[
+                WikiPage(
+                    rel_path="entities/kafka.md",
+                    frontmatter=_good_fm("demo", "entity", "kafka"),
+                    body="# Kafka\n\nSee [[?future-page]] when it exists.",
+                )
+            ],
+        )
+        validate_changeset(cs, snap)
+
+    def test_duplicate_entity_fails(self, tmp_path: Path):
+        snap = _snap(tmp_path)
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[
+                WikiPage(
+                    rel_path="entities/kafka.md",
+                    frontmatter=_good_fm("demo", "entity", "kafka"),
+                    body="# Kafka\n",
+                ),
+                WikiPage(
+                    rel_path="entities/kafka-broker.md",
+                    frontmatter=_good_fm("demo", "entity", "kafka-broker"),
+                    body="# kafka\n",  # case-insensitive duplicate of "Kafka"
+                ),
+            ],
+        )
+        with pytest.raises(ValidationError, match="duplicates"):
+            validate_changeset(cs, snap)
+
+    def test_low_confidence_requires_warning(self, tmp_path: Path):
+        snap = _snap(tmp_path)
+        fm = _good_fm("demo", "entity", "kafka")
+        fm["confidence"] = "low"
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[
+                WikiPage(
+                    rel_path="entities/kafka.md",
+                    frontmatter=fm,
+                    body="# Kafka\n\nNo warning here.",
+                )
+            ],
+        )
+        with pytest.raises(ValidationError, match="\\[!warning\\]"):
+            validate_changeset(cs, snap)
+
+    def test_low_confidence_with_warning_passes(self, tmp_path: Path):
+        snap = _snap(tmp_path)
+        fm = _good_fm("demo", "entity", "kafka")
+        fm["confidence"] = "low"
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[
+                WikiPage(
+                    rel_path="entities/kafka.md",
+                    frontmatter=fm,
+                    body="> [!warning]\n> Sparse data.\n\n# Kafka\n",
+                )
+            ],
+        )
+        validate_changeset(cs, snap)
+
+    def test_wikilink_preservation_guard_fires(self, tmp_path: Path):
+        """The load-bearing safety property: lost wikilinks → exit 5."""
+        snap = _snap(tmp_path)
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            updates=[
+                WikiPageUpdate(
+                    rel_path="pages/architecture.md",
+                    expected_existing_links=["postgres", "redis"],
+                    frontmatter=_good_fm("demo", "core", "architecture"),
+                    body="# Architecture\n\nMentions only [[postgres]] now.",
+                )
+            ],
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_changeset(cs, snap)
+        assert exc_info.value.exit_code == 5
+        assert exc_info.value.marker == "WIKI_LINKS_LOST"
+        assert "redis" in str(exc_info.value)
+
+    @pytest.mark.parametrize("expected_links", [[], ["postgres"]])
+    def test_guard_uses_snapshot_when_model_omits_expected_links(
+        self, tmp_path: Path, expected_links: list[str]
+    ):
+        snap = _snap(tmp_path)
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            updates=[
+                WikiPageUpdate(
+                    rel_path="pages/architecture.md",
+                    expected_existing_links=expected_links,
+                    frontmatter=_good_fm("demo", "core", "architecture"),
+                    body="# Architecture\n\nOnly [[postgres]] survived.",
+                )
+            ],
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_changeset(cs, snap)
+        assert exc_info.value.exit_code == 5
+        assert exc_info.value.marker == "WIKI_LINKS_LOST"
+        assert "redis" in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        "expected_links", [[], ["postgres"], ["postgres", "redis", "fabricated"]]
+    )
+    def test_preserved_snapshot_links_pass_despite_inaccurate_model_list(
+        self, tmp_path: Path, expected_links: list[str]
+    ):
+        snap = _snap(tmp_path)
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            updates=[
+                WikiPageUpdate(
+                    rel_path="pages/architecture.md",
+                    expected_existing_links=expected_links,
+                    frontmatter=_good_fm("demo", "core", "architecture"),
+                    body="# Architecture\n\n[[postgres|Database]] and [[redis#Caching]].",
+                )
+            ],
+        )
+        validate_changeset(cs, snap)
+
+
+@pytest.mark.parametrize("update_only", [False, True])
+def test_compile_rejects_existing_create_before_writing(tmp_path: Path, monkeypatch, capsys, update_only):
+    wiki_root = tmp_path / "vault" / "LLM Wiki" / "demo"
+    _seed_space(wiki_root)
+    original = {p: p.read_bytes() for p in wiki_root.rglob("*.md")}
+    staging_root = tmp_path / "staging"
+    cs = ChangeSet(
+        project="demo",
+        compile_id="x",
+        creates=[WikiPage(
+            rel_path="pages/architecture.md",
+            frontmatter=_good_fm("demo", "core", "architecture"),
+            body="# Architecture\n\nOnly [[postgres]] remains.",
+        )],
+    )
+    config = {
+        "vault": {"vault_path": str(tmp_path / "vault")},
+        "rclone": {"staging_dir": str(staging_root)},
+    }
+    monkeypatch.setattr(wiki_compile, "_load_config", lambda **kwargs: config)
+    monkeypatch.setattr(wiki_compile, "call_rewriter", Mock(return_value=("fixture", json.dumps(cs.to_dict()))))
+    monkeypatch.setattr(wiki_compile, "write_debug_prompt", Mock(return_value=tmp_path / "prompt.txt"))
+    monkeypatch.setattr(wiki_compile, "DEBUG_RESPONSE_PATH", tmp_path / "response.json")
+    writer = Mock(return_value=0)
+    monkeypatch.setattr(wiki_compile, "write_to_vault", writer)
+    argv = ["wiki_compile.py", "demo"] + (["--update-only"] if update_only else [])
+    monkeypatch.setattr(wiki_compile.sys, "argv", argv)
+
+    assert wiki_compile.main() == 3
+    assert "WIKI_VALIDATION_FAILED" in capsys.readouterr().err
+    writer.assert_not_called()
+    assert not staging_root.exists()
+    assert {p: p.read_bytes() for p in wiki_root.rglob("*.md")} == original
+
+
+# ── materialize_to_staging ───────────────────────────────────────────────────
+
+
+class TestMaterialize:
+    def test_writes_creates_and_updates(self, tmp_path: Path):
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[
+                WikiPage(
+                    rel_path="entities/kafka.md",
+                    frontmatter=_good_fm("demo", "entity", "kafka"),
+                    body="# Kafka\n\nLinks to [[postgres]].",
+                )
+            ],
+            updates=[
+                WikiPageUpdate(
+                    rel_path="pages/architecture.md",
+                    expected_existing_links=["postgres"],
+                    frontmatter=_good_fm("demo", "core", "architecture"),
+                    body="# Architecture\n\n[[postgres]] still here.",
+                )
+            ],
+        )
+        materialize_to_staging(cs, tmp_path)
+        assert (tmp_path / "entities" / "kafka.md").exists()
+        assert (tmp_path / "pages" / "architecture.md").exists()
+        text = (tmp_path / "entities" / "kafka.md").read_text(encoding="utf-8")
+        assert text.startswith("---\n")
+        assert "wiki_project: demo" in text
+        assert "[[postgres]]" in text
+
+
+# ── Index regeneration ──────────────────────────────────────────────────────
+
+
+class TestDetectIndexLangAndTitle:
+    def test_detects_ru_locale_and_title(self):
+        body = "# Индекс — Acme Project\n\nblah\n"
+        assert _detect_index_lang_and_title(body, "acme") == ("ru", "Acme Project")
+
+    def test_detects_en_locale_and_title(self):
+        body = "# Index — Acme Project\n"
+        assert _detect_index_lang_and_title(body, "acme") == ("en", "Acme Project")
+
+    def test_missing_index_falls_back_to_slug(self):
+        assert _detect_index_lang_and_title("", "acme") == ("en", "acme")
+
+    def test_unknown_prefix_keeps_h1_but_defaults_lang(self):
+        lang, title = _detect_index_lang_and_title("# Something Else\n", "acme")
+        assert lang == "en"
+        assert title == "Something Else"
+
+
+class TestComputePostCompilePages:
+    def test_creates_and_updates_preserve_unrelated_pages(self):
+        snapshot = {
+            "pages": {
+                "entities/old.md": {"frontmatter": {}, "body": "old"},
+                "concepts/foo.md": {"frontmatter": {}, "body": "v1"},
+            }
+        }
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[
+                WikiPage(
+                    rel_path="entities/new.md",
+                    frontmatter=_good_fm("demo", "entity", "new"),
+                    body="# New",
+                )
+            ],
+            updates=[
+                WikiPageUpdate(
+                    rel_path="concepts/foo.md",
+                    expected_existing_links=[],
+                    frontmatter=_good_fm("demo", "concept", "foo"),
+                    body="# Foo v2",
+                )
+            ],
+        )
+        out = _compute_post_compile_pages(snapshot, cs)
+        assert out["entities/old.md"] == snapshot["pages"]["entities/old.md"]
+        assert "entities/new.md" in out
+        assert out["concepts/foo.md"]["body"] == "# Foo v2"
+
+    def test_none_changeset_returns_snapshot_pages(self):
+        snapshot = {"pages": {"entities/x.md": {"frontmatter": {}, "body": "b"}}}
+        out = _compute_post_compile_pages(snapshot, None)
+        assert out == snapshot["pages"]
+
+
+class TestRenderIndexMarkdown:
+    def _final(self):
+        return {
+            "SCHEMA.md": {"frontmatter": {}, "body": ""},
+            "log.md": {"frontmatter": {}, "body": ""},
+            "index.md": {"frontmatter": {}, "body": ""},
+            "pages/overview.md": {"frontmatter": {}, "body": ""},
+            "pages/architecture.md": {"frontmatter": {}, "body": ""},
+            "entities/kafka.md": {"frontmatter": {}, "body": ""},
+            "entities/postgres.md": {"frontmatter": {}, "body": ""},
+            "concepts/idempotency.md": {"frontmatter": {}, "body": ""},
+            "comparisons/a-vs-b.md": {"frontmatter": {}, "body": ""},
+            "raw/docs/note.md": {"frontmatter": {}, "body": ""},
+        }
+
+    def test_project_mode_lists_core_and_buckets_in_en(self):
+        text = _render_index_markdown(
+            final_pages=self._final(),
+            slug="demo",
+            mode="project",
+            lang="en",
+            title="Demo",
+            today="2026-05-16",
+        )
+        assert "# Index — Demo" in text
+        assert "## Core pages" in text
+        assert "- [[architecture]]" in text
+        assert "- [[overview]]" in text
+        assert "## Entities" in text
+        assert "- [[kafka]]" in text
+        assert "- [[postgres]]" in text
+        assert "- [[idempotency]]" in text
+        assert "- [[a-vs-b]]" in text
+        # Queries section exists even when empty.
+        assert "## Queries" in text
+        assert "_(empty)_" in text
+        # Meta + raw pages never appear in index.
+        assert "[[SCHEMA]]" not in text
+        assert "[[log]]" not in text
+        assert "[[note]]" not in text
+
+    def test_corpus_mode_renders_corpus_placeholder_for_core(self):
+        text = _render_index_markdown(
+            final_pages={"entities/k.md": {"frontmatter": {}, "body": ""}},
+            slug="demo",
+            mode="corpus",
+            lang="en",
+            title="Demo",
+            today="2026-05-16",
+        )
+        assert "corpus mode" in text
+        assert "- [[k]]" in text
+
+    def test_ru_locale_uses_russian_headers(self):
+        text = _render_index_markdown(
+            final_pages={"entities/k.md": {"frontmatter": {}, "body": ""}},
+            slug="demo",
+            mode="project",
+            lang="ru",
+            title="Демо",
+            today="2026-05-16",
+        )
+        assert "# Индекс — Демо" in text
+        assert "## Core-страницы" in text
+        # Bucket headers stay language-neutral.
+        assert "## Entities" in text
+
+
+class TestRegenerateIndexToStaging:
+    def test_writes_index_md_into_staging(self, tmp_path: Path):
+        snapshot = {
+            "pages": {
+                "index.md": {
+                    "frontmatter": {},
+                    "body": "# Index — Demo\n\nold body",
+                },
+                "entities/kafka.md": {"frontmatter": {}, "body": "# Kafka"},
+            }
+        }
+        regenerate_index_to_staging(
+            tmp_path, slug="demo", snapshot=snapshot, cs=None, mode="project"
+        )
+        out = (tmp_path / "index.md").read_text(encoding="utf-8")
+        assert out.startswith("---\n")
+        assert "wiki_project: demo" in out
+        assert "# Index — Demo" in out
+        assert "- [[kafka]]" in out
+
+    def test_includes_changeset_creates_in_listing(self, tmp_path: Path):
+        snapshot = {
+            "pages": {
+                "index.md": {
+                    "frontmatter": {},
+                    "body": "# Index — Demo",
+                }
+            }
+        }
+        cs = ChangeSet(
+            project="demo",
+            compile_id="x",
+            creates=[
+                WikiPage(
+                    rel_path="entities/new.md",
+                    frontmatter=_good_fm("demo", "entity", "new"),
+                    body="# New",
+                )
+            ],
+        )
+        regenerate_index_to_staging(
+            tmp_path, slug="demo", snapshot=snapshot, cs=cs, mode="corpus"
+        )
+        out = (tmp_path / "index.md").read_text(encoding="utf-8")
+        assert "- [[new]]" in out
+        assert "corpus mode" in out
