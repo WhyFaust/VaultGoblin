@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -171,3 +172,47 @@ def test_merge_rejects_protected_notes_and_unrelated_existing_target(tmp_path):
         dedup_vault.execute_merge(group, config_for(vault, tmp_path / "staging"), vault)
     assert source.exists()
     assert target.read_text(encoding="utf-8") == "Unrelated note"
+
+
+def test_tilde_vault_is_consistent_for_search_write_and_snapshot(tmp_path, monkeypatch):
+    profile = tmp_path / "profile"
+    vault = profile / "vault"
+    source = vault / "Notes/Original.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("Previous", encoding="utf-8")
+    monkeypatch.setenv("USERPROFILE", str(profile))
+    monkeypatch.setenv("HOME", str(profile))
+    cfg = config_for(Path("~/vault"), tmp_path / "staging")
+    found = process_note.find_note("Original", cfg)
+    assert found == source
+    monkeypatch.setattr(process_note, "load_registry", lambda: {})
+    monkeypatch.setattr(process_note, "save_registry", lambda _: None)
+    process_note.write_enrich_result({"note": note("Original")}, found, cfg)
+    assert "Content." in source.read_text(encoding="utf-8")
+    fingerprint = hashlib.sha256(source.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+    vault_writer.check_expected_state(Path("~/vault"), {"Notes/Original.md": fingerprint})
+    staged = tmp_path / "staged.md"
+    staged.write_text("Next version", encoding="utf-8")
+    vault_writer.atomic_copy_note(staged, Path("~/vault/Notes/Original.md"), vault=Path("~/vault"),
+                                  expected={"Notes/Original.md": fingerprint})
+    assert source.read_text(encoding="utf-8") == "Next version"
+
+
+def test_writer_rejects_bad_destination_before_creating_folders(tmp_path, monkeypatch):
+    vault, staging = tmp_path / "vault", tmp_path / "staging"
+    vault.mkdir()
+    staging.mkdir()
+    staged = staging / "Document.md"
+    staged.write_text(generate_notes.render_note_md(note("Document")), encoding="utf-8")
+    cfg = config_for(vault, staging)
+    cfg["vault"]["notes_folder"] = "../outside"
+    monkeypatch.setattr(vault_writer, "load_config", lambda: cfg)
+    monkeypatch.setattr(vault_writer, "load_registry", lambda: {})
+    monkeypatch.setattr("sys.argv", ["writer", "--staging", str(staging), "--non-interactive"])
+    with pytest.raises(SystemExit) as result:
+        vault_writer.main()
+    assert result.value.code == 1
+    assert not (tmp_path / "outside").exists()
+    with pytest.raises(ValueError, match="leaves the configured vault"):
+        vault_writer.atomic_copy_note(staged, tmp_path / "outside.md", vault=vault)
+    assert not (tmp_path / "outside.md").exists()

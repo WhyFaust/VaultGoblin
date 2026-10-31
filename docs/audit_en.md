@@ -7,7 +7,7 @@ paths and reproduced defects using temporary data. Assumed load: one user,
 Windows/Linux, multiple chats and two devices sharing an Obsidian vault.
 
 The initial revision passed 57 shared-knowledge tests and 250 pipeline tests.
-That did not rule out the 12 defects below. Each now has a regression or an
+The first audit found 12 defects; a second pass added two more. Each now has a regression or an
 expanded relevant check. Fixes are verified by rerunning the suites.
 
 | # | Priority | Reproduced failure | Fix |
@@ -24,6 +24,8 @@ expanded relevant check. Fixes are verified by rerunning the suites.
 | 10 | P2 | `renames` succeeded without renaming files | Unsupported renames fail explicitly; prompts no longer advertise them |
 | 11 | P2 | An unsafe `wiki_folder` let init escape the vault | Init, ingest, compile and lint share Wiki-root validation |
 | 12 | P1 | Deduplication moved immutable raw into the ordinary-note archive | Candidate scans, merge and link updates exclude Wiki and shared Codex knowledge, including a configured Wiki folder |
+| 13 | P2 | `~/vault` worked for reading but failed for writing and snapshot checks | The loader, commands and low-level guards normalize vault paths consistently |
+| 14 | P2 | Without expected-state, `notes_folder="../outside"` let the general writer escape | Destination containment is checked before mkdir and again inside atomic_copy_note without a snapshot |
 
 Regressions live in
 [`test_data_boundaries.py`](../pipeline/tests/test_data_boundaries.py),

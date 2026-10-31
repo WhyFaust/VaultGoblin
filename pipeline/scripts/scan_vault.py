@@ -22,8 +22,8 @@ SKIP_DIRS = {".obsidian", ".trash", ".smart-env", ".archive", ".git"}
 
 
 def require_vault_path(path: Path, vault_path: Path) -> Path:
-    resolved = path.resolve()
-    if not resolved.is_relative_to(vault_path.resolve()):
+    resolved = path.expanduser().resolve()
+    if not resolved.is_relative_to(vault_path.expanduser().resolve()):
         raise ValueError(f"Path leaves the configured vault: {path}")
     return resolved
 
@@ -104,7 +104,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config()
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
 
     if not vault_path.exists():
         print(f"ERROR: Vault path does not exist: {vault_path}", file=sys.stderr)

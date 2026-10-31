@@ -143,7 +143,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(strict=True)
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
     notes = iter_notes(vault_path, wiki_folder=config.get("wiki", {}).get("wiki_folder", "LLM Wiki"))
 
     targets = [note for note in notes if is_target_note(note, min_words=args.min_words)]

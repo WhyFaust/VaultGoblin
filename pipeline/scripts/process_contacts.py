@@ -128,7 +128,7 @@ def find_note(query: str, config: dict) -> Path | None:
     This prevents `process_contacts.py /etc/passwd` and `../../escape` tricks
     from touching files archive_original() would later move.
     """
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
 
     query_path = Path(query)
     if query_path.is_absolute():
@@ -365,7 +365,7 @@ def write_contacts_result(
     on_conflict: str = "skip",
 ) -> None:
     """Write contact notes and MOC to vault via staging."""
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
     original_path = require_vault_path(original_path, vault_path)
     contacts = result.get("contacts", [])
     moc = result.get("moc")
@@ -437,7 +437,7 @@ def write_contacts_result(
     # Archive original note only when the full pipeline produced output.
     # If the MOC was not generated, the user would lose the source note
     # without getting the organizational entry point for those contacts.
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
     if moc:
         archive_original(original_path, vault_path)
     else:
@@ -491,7 +491,7 @@ def main() -> None:
 
     # Load config
     config = load_config_strict()
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
 
     # Step 1: Find the note
     print(f">> Finding note: {args.input}", file=sys.stderr)

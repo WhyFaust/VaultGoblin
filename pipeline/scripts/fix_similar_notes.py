@@ -335,7 +335,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(strict=True)
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
     reviewed = load_reviewed()
     tags = load_tags()
     wiki_folder = config.get("wiki", {}).get("wiki_folder", "LLM Wiki")

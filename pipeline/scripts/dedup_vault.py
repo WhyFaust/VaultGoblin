@@ -707,7 +707,7 @@ def main() -> None:
 
     # Load config
     config = _load_config(strict=True)
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
 
     if not vault_path.exists():
         print(f"ERROR: Vault path does not exist: {vault_path}", file=sys.stderr)

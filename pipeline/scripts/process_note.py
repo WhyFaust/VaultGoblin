@@ -341,7 +341,7 @@ def write_enrich_result(
     note = result["note"]
     title = note["title"]
     original_title = note.get("original_title", title)
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
     original_path = require_vault_path(original_path, vault_path)
     notes_folder = vault_path / config["vault"].get("notes_folder", "Notes")
 
@@ -390,7 +390,7 @@ def write_atomize_result(
     on_conflict: str = "skip",
 ) -> None:
     """Write atomized notes to vault via staging → generate → vault_writer flow."""
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
     original_path = require_vault_path(original_path, vault_path)
     notes = result.get("notes", [])
     filenames = note_filenames(notes)
@@ -450,7 +450,7 @@ def write_atomize_result(
         print(f"  {vw_result.stdout.strip()}", file=sys.stderr)
 
     # Archive original
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
     archive_original(original_path, vault_path)
 
 
@@ -502,7 +502,7 @@ def main() -> None:
 
     # Load config
     config = load_config_strict()
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
 
     # Step 1: Find the note
     print(f">> Finding note: {args.input}", file=sys.stderr)

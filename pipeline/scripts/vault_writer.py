@@ -39,9 +39,11 @@ import yaml
 
 try:
     from scripts.config import REGISTRY_PATH, load_config as _load_config
+    from scripts.scan_vault import require_vault_path
     from scripts.wiki_models import WIKI_NOTE_TYPE, WIKI_RAW_KINDS, is_valid_slug
 except ModuleNotFoundError:
     from config import REGISTRY_PATH, load_config as _load_config
+    from scan_vault import require_vault_path
     from wiki_models import WIKI_NOTE_TYPE, WIKI_RAW_KINDS, is_valid_slug
 
 
@@ -55,6 +57,7 @@ def load_config() -> dict:
 
 def check_expected_state(vault: Path, expected: dict) -> None:
     """Refuse a stale compile before replacing any of its input pages."""
+    vault = vault.expanduser().resolve()
     for relative, digest in expected.items():
         if not isinstance(relative, str) or "\\" in relative:
             raise ValueError("Invalid expected-state path")
@@ -77,6 +80,8 @@ def check_expected_state(vault: Path, expected: dict) -> None:
 
 def atomic_copy_note(source: Path, target: Path, *, vault: Path, expected: dict | None = None) -> None:
     """Keep the previous note intact if staging/copying fails."""
+    vault = vault.expanduser().resolve()
+    target = require_vault_path(target, vault)
     fd, temporary_name = tempfile.mkstemp(dir=target.parent, prefix=".vaultgoblin-", suffix=".tmp")
     os.close(fd)
     temporary = Path(temporary_name)
@@ -243,7 +248,7 @@ def get_vault_dest(
         # "atomic" and any unknown type
         folder = vault_cfg.get("notes_folder", "Notes")
 
-    return vault_path / folder
+    return require_vault_path(vault_path / folder, vault_path)
 
 
 def _wiki_dest(config: dict, frontmatter: dict) -> Path:
@@ -421,7 +426,7 @@ def main() -> None:
             expected = json.loads(args.expected_state.read_text(encoding="utf-8"))
             if not isinstance(expected, dict):
                 raise ValueError("Expected-state manifest must be an object")
-            check_expected_state(Path(config["vault"]["vault_path"]), expected)
+            check_expected_state(Path(config["vault"]["vault_path"]).expanduser(), expected)
         except (OSError, ValueError) as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
@@ -532,6 +537,7 @@ def main() -> None:
         # to resolve <wiki_project>/<bucket>; other types ignore it.
         try:
             dest_dir = get_vault_dest(note_type, config, frontmatter=fm)
+            dest_dir = require_vault_path(dest_dir, Path(config["vault"]["vault_path"]).expanduser())
         except ValueError as exc:
             print(
                 f"ERROR: cannot route {md_file.name}: {exc}",
@@ -554,7 +560,7 @@ def main() -> None:
                 continue
         try:
             atomic_copy_note(
-                md_file, dest_path, vault=Path(config["vault"]["vault_path"]), expected=expected,
+                md_file, dest_path, vault=Path(config["vault"]["vault_path"]).expanduser(), expected=expected,
             )
         except (OSError, ValueError) as exc:
             print(f"ERROR: cannot replace {dest_path}: {exc}", file=sys.stderr)

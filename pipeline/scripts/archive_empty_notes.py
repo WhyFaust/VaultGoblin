@@ -54,7 +54,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(strict=True)
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
     candidates = []
     stamp = date.today().isoformat()
     for note_path in vault_path.rglob("*.md"):

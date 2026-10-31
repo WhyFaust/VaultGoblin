@@ -112,7 +112,7 @@ def main() -> None:
 
     if config_path.exists():
         cfg = load_config(strict=True)
-        vault_path = Path(cfg["vault"]["vault_path"])
+        vault_path = Path(cfg["vault"]["vault_path"]).expanduser()
         ok &= check_path("vault_path", vault_path)
         if vault_path.exists():
             rebuilt = rebuild_registry(vault_path)

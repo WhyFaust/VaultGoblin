@@ -75,6 +75,8 @@ def load_config(*, strict: bool = False) -> dict:
 
     with open(config_path, "rb") as f:
         config = tomllib.load(f)
+    if config.get("vault", {}).get("vault_path"):
+        config["vault"]["vault_path"] = str(Path(config["vault"]["vault_path"]).expanduser())
     if not config.get("rclone", {}).get("staging_dir"):
         config.setdefault("rclone", {})["staging_dir"] = DEFAULT_STAGING_DIR
     return config

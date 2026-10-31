@@ -222,7 +222,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(strict=True)
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
     notes = iter_notes(vault_path, wiki_folder=config.get("wiki", {}).get("wiki_folder", "LLM Wiki"))
     report = audit_notes(
         notes,

@@ -64,7 +64,7 @@ def rebuild_registry(vault_path: Path) -> dict[str, dict]:
 
 def main() -> None:
     config = load_config(strict=True)
-    vault_path = Path(config["vault"]["vault_path"])
+    vault_path = Path(config["vault"]["vault_path"]).expanduser()
     registry = rebuild_registry(vault_path)
     data = json.dumps(registry, ensure_ascii=False, indent=2)
     fd, tmp_path = tempfile.mkstemp(
