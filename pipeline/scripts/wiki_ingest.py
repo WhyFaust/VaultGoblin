@@ -166,6 +166,7 @@ def main() -> int:
         return 1
 
     config = _load_config(strict=True)
+    vault_path = Path(config["vault"]["vault_path"]).expanduser().resolve()
     try:
         wiki_root = resolve_wiki_root(config, args.slug)
     except ValueError as exc:
