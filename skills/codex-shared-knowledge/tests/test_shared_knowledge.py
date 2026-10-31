@@ -109,7 +109,8 @@ class SharedKnowledgeTests(unittest.TestCase):
         native.write_text("# Alpha\n\nKeep.\n", encoding="utf-8")
         write = shared.atomic_write
         def interrupted(path, text):
-            if path == manifest:
+            # Windows temporary roots can use a different 8.3 spelling of the same path.
+            if path.resolve() == manifest.resolve():
                 raise OSError("simulated manifest interruption")
             write(path, text)
         with patch.object(shared, "atomic_write", side_effect=interrupted):
