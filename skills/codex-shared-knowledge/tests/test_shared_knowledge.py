@@ -250,6 +250,89 @@ class SharedKnowledgeTests(unittest.TestCase):
         self.assertEqual(config.read_text(encoding="utf-8"), "[]")
         self.assertFalse((self.home / "skills").exists())
 
+    def test_event_export_skips_unchanged_native_memory(self):
+        shared.export(self.home)
+        with patch.object(shared, "split_topics", side_effect=AssertionError("No regeneration needed")), \
+             patch.object(shared, "read_record", side_effect=AssertionError("No exported notes should be read")):
+            self.assertEqual(shared.export(self.home, if_changed=True)["status"], "unchanged")
+            (self.native / "raw_memories.md").write_text("Not an export source", encoding="utf-8")
+            self.assertEqual(shared.export(self.home, if_changed=True)["status"], "unchanged")
+
+    def test_event_export_initializes_and_exports_changed_content(self):
+        self.assertEqual(shared.export(self.home, if_changed=True)["status"], "exported")
+        (self.native / "MEMORY.md").write_text("NewEventFact", encoding="utf-8")
+        result = shared.export(self.home, if_changed=True)
+        self.assertEqual(result["status"], "exported")
+        self.assertTrue(shared.search(self.home, "NewEventFact")["matches"])
+
+    def test_event_export_cli_supports_quiet_unchanged_calls(self):
+        shared.export(self.home)
+        result = subprocess.run([sys.executable, str(SCRIPT), "export", "--if-changed", "--quiet"],
+                                env={**os.environ, "CODEX_HOME": str(self.home)}, capture_output=True,
+                                text=True, encoding="utf-8", check=True, timeout=3)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+    def test_project_navigation_preserves_exports_and_is_idempotent(self):
+        self.write_topics(first_body="applies_to: cwd=/work/example-app;\nUseful fact")
+        shared.export(self.home)
+        devices = self.vault / shared.FOLDER / "devices"
+        before = {path: path.read_bytes() for path in devices.rglob('*') if path.is_file()}
+        self.assertEqual(shared.organize(self.home)['status'], 'planned')
+        self.assertFalse((self.vault / shared.FOLDER / 'Projects').exists())
+        with patch.object(shared, 'read_record', side_effect=AssertionError('Navigation needs manifests only')):
+            shared.organize(self.home, apply=True)
+        page = self.vault / shared.FOLDER / 'Projects/example-app.md'
+        self.assertIn('Alpha', page.read_text(encoding='utf-8'))
+        self.assertIn('topic-', page.read_text(encoding='utf-8'))
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
+        self.assertTrue(json.loads((self.home / 'shared-knowledge.json').read_text(encoding='utf-8'))['project_navigation'])
+        self.assertEqual(shared.organize(self.home, apply=True)['navigation_files_changed'], 0)
+
+    def test_navigation_cleanup_backs_up_only_known_setup_files(self):
+        shared.export(self.home)
+        root = self.vault / shared.FOLDER
+        setup = root / 'Setup/codex-shared-knowledge'
+        setup.mkdir(parents=True)
+        (setup / 'SKILL.md').write_text('---\nname: codex-shared-knowledge\n---\n', encoding='utf-8')
+        manual = root / 'Setup/personal-note.md'
+        manual.write_text('Keep this.', encoding='utf-8')
+        shared.organize(self.home, apply=True, clean_setup=True)
+        self.assertFalse((setup / 'SKILL.md').exists())
+        self.assertEqual(manual.read_text(encoding='utf-8'), 'Keep this.')
+        backups = list((self.home / 'backups/vaultgoblin-navigation').rglob('SKILL.md'))
+        self.assertEqual(len(backups), 1)
+        self.assertIn('name: codex-shared-knowledge', backups[0].read_text(encoding='utf-8'))
+
+    def test_navigation_does_not_overwrite_manual_pages(self):
+        shared.export(self.home)
+        root = self.vault / shared.FOLDER
+        (root / 'README.md').write_text('Personal guide.', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'manual navigation'):
+            shared.organize(self.home, apply=True)
+        self.assertEqual((root / 'README.md').read_text(encoding='utf-8'), 'Personal guide.')
+        self.assertFalse((root / 'Projects').exists())
+
+    def test_incomplete_sync_blocks_navigation_without_cleanup(self):
+        shared.export(self.home)
+        record = self.manifest()['notes'][0]
+        (self.vault / shared.FOLDER / 'devices/first-pc' / record['file']).unlink()
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            shared.organize(self.home, apply=True, clean_setup=True)
+        self.assertFalse((self.vault / shared.FOLDER / 'README.md').exists())
+
+    def test_navigation_separates_archived_topics(self):
+        self.write_topics()
+        shared.export(self.home)
+        self.write_topics(second=False)
+        shared.export(self.home)
+        shared.organize(self.home, apply=True)
+        page = self.vault / shared.FOLDER / 'Projects/general.md'
+        content = page.read_text(encoding='utf-8')
+        self.assertIn('## Актуальные темы', content)
+        self.assertIn('## Архив', content)
+        self.assertIn('Beta', content.split('## Архив')[1])
+
     def test_empty_native_memory_does_not_erase_last_snapshot(self):
         target = Path(shared.export(self.home)["file"])
         before = target.read_bytes()

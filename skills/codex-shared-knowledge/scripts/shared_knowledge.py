@@ -11,6 +11,7 @@ import shlex
 import sqlite3
 import sys
 import tempfile
+import threading
 import uuid
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
@@ -24,6 +25,7 @@ AGENT_LINE = "- codex-shared-knowledge — предыдущие решения �
 RECALL_START = "<!-- codex-shared-recall -->"
 RECALL_END = "<!-- /codex-shared-recall -->"
 EXPORT_HOOK = "VaultGoblin: export shared knowledge"
+NAV_MARKER = "<!-- vaultgoblin-navigation -->"
 RECALL_RULE = (
     RECALL_START + "\n"
     "Перед содержательной работой в знакомом проекте, разбором повторной ошибки или вопросом о прошлом решении "
@@ -111,7 +113,7 @@ def install(vault: Path, device: str, home: Path) -> dict:
     source = Path(__file__).resolve().parents[1]
     destination = contained(home, home / "skills" / "codex-shared-knowledge")
     for relative in ("SKILL.md", "scripts/shared_knowledge.py", "scripts/install_export_task.ps1",
-                     "tests/test_shared_knowledge.py"):
+                     "tests/test_shared_knowledge.py", "requirements-watch.txt"):
         target = contained(home, destination / relative)
         content = (source / relative).read_text(encoding="utf-8")
         if (source / relative).resolve() != target.resolve():
@@ -324,10 +326,164 @@ def backup_and_remove(home: Path, device: str, path: Path, expected_id: str | No
     path.unlink()
 
 
-def export(home: Path) -> dict:
+def export(home: Path, if_changed: bool = False) -> dict:
     vault, device = settings(home)
     with export_lock(home):
-        return export_topics(home, vault, device)
+        return export_topics(home, vault, device, if_changed)
+
+
+def watch(home: Path) -> None:
+    """Wait for completed memory writes, retaining changes received during export."""
+    if not sys.platform.startswith("linux"):
+        raise ValueError("Memory watching currently supports Linux; export and recall remain portable")
+    try:
+        from watchdog.events import FileSystemEventHandler
+        from watchdog.observers import Observer
+    except ImportError as error:
+        raise ValueError("Install requirements-watch.txt with the Python used for watch") from error
+    vault, _ = settings(home)
+    native = contained(home, home / "memories")
+    native.mkdir(mode=0o700, parents=True, exist_ok=True)
+    pending = threading.Event()
+    navigation = json.loads((home / "shared-knowledge.json").read_text(encoding="utf-8")).get("project_navigation") is True
+    devices = contained(vault, vault / FOLDER / "devices")
+    if navigation:
+        devices.mkdir(parents=True, exist_ok=True)
+
+    class MemoryChanged(FileSystemEventHandler):
+        def on_any_event(self, event):
+            if event.event_type not in ("closed", "moved", "deleted", "created"):
+                return
+            paths = (event.src_path, getattr(event, "dest_path", ""))
+            if not event.is_directory and event.event_type != "created" and any(
+                    Path(path).parent == native and Path(path).name in SOURCES for path in paths):
+                pending.set()
+            elif navigation and any(Path(path).is_relative_to(devices) and
+                                    (event.is_directory or Path(path).name == "manifest.json" or Path(path).suffix == ".md")
+                                    for path in paths):
+                pending.set()
+
+    observer = Observer()
+    observer.schedule(MemoryChanged(), str(native), recursive=False)
+    if navigation:
+        observer.schedule(MemoryChanged(), str(devices), recursive=True)
+    observer.start()
+    pending.set()  # Reconcile changes made while the watcher was stopped.
+    try:
+        while True:
+            pending.wait()
+            pending.clear()
+            export(home, if_changed=True)
+            if navigation:
+                try:
+                    organize(home, apply=True)
+                except (OSError, ValueError, KeyError, TypeError) as error:
+                    print(f"Navigation pending: {error}", file=sys.stderr)
+    finally:
+        observer.stop()
+        observer.join()
+
+
+def organize(home: Path, apply: bool = False, clean_setup: bool = False) -> dict:
+    """Create project navigation without moving notes or changing manifests."""
+    vault, _ = settings(home)
+    root = contained(vault, vault / FOLDER)
+    devices = contained(root, root / "devices")
+    projects, summaries = {}, []
+    for folder in sorted(devices.iterdir()) if devices.exists() else []:
+        if not folder.is_dir() or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", folder.name):
+            continue
+        contained(devices, folder)
+        manifest = load_manifest(folder, folder.name)
+        if not manifest:
+            raise ValueError(f"Device manifest is missing: {folder}")
+        for note in manifest["notes"]:
+            if not contained(folder, folder / note["file"]).is_file():
+                raise ValueError(f"Sync is incomplete: {folder / note['file']}")
+            item = {**note, "device": folder.name}
+            if note["kind"] == "summary":
+                summaries.append(item)
+            else:
+                projects.setdefault(note.get("project", "general"), []).append(item)
+    rendered, slugs = {}, {}
+    for project in sorted(projects):
+        slug = re.sub(r"[^\w-]+", "-", project.casefold().replace("_", "-")).strip("-")[:64] or "general"
+        if re.fullmatch(r"con|prn|aux|nul|com[1-9]|lpt[1-9]", slug):
+            slug = "project-" + slug
+        if slug in slugs.values():
+            slug += "-" + hashlib.sha256(project.encode()).hexdigest()[:8]
+        slugs[project] = slug
+        body = f"{NAV_MARKER}\n# {project if project != 'general' else 'Общие решения'}\n\n"
+        for status, heading in (("active", "Актуальные темы"), ("archived", "Архив")):
+            selected = [note for note in projects[project] if note.get("status", "active") == status]
+            if selected:
+                body += f"## {heading}\n\n" + "\n".join("- " + note_link(
+                    note["device"], note["file"], note["title"] + " · " + note["device"])
+                    for note in sorted(selected, key=lambda note: (note["title"].casefold(), note["device"]))) + "\n\n"
+        rendered[root / "Projects" / (slug + ".md")] = body
+    body = f"{NAV_MARKER}\n# 🧌 Общие знания Codex\n\n## Проекты\n\n"
+    body += "\n".join(f"- [[{FOLDER}/Projects/{slugs[project]}|{project if project != 'general' else 'Общие решения'}]]"
+                      for project in sorted(projects)) + "\n\n## Устройства\n\n"
+    body += "\n".join("- " + note_link(note["device"], note["file"], note["device"]) for note in summaries)
+    body += ("\n\nТемы обновляются автоматически. Служебные файлы со стабильными ID находятся в `devices/`.\n"
+             "Исходный код и установка: https://github.com/WhyFaust/VaultGoblin.\n")
+    rendered[root / "README.md"] = body
+    changed, removed = {}, []
+    for path, text in rendered.items():
+        contained(root, path)
+        if path.exists():
+            previous = path.read_text(encoding="utf-8")
+            if not previous.startswith(NAV_MARKER):
+                raise ValueError(f"Refusing to overwrite a manual navigation note: {path}")
+            if previous == text:
+                continue
+        changed[path] = text
+    for path in (root / "Projects").glob("*.md"):
+        contained(root, path)
+        if path not in rendered and path.read_text(encoding="utf-8").startswith(NAV_MARKER):
+            removed.append(path)
+    if clean_setup:
+        setup = contained(root, root / "Setup/codex-shared-knowledge")
+        skill = setup / "SKILL.md"
+        if skill.exists() and re.search(r"(?m)^name:\s*codex-shared-knowledge\s*$", skill.read_text(encoding="utf-8")):
+            removed += [path for name in ("SKILL.md", "scripts/shared_knowledge.py", "scripts/install_export_task.ps1",
+                                         "tests/test_shared_knowledge.py") if (path := contained(root, setup / name)).is_file()]
+            for relative, prefix in (("Setup/README.md", "# Legacy setup snapshots"),
+                                     ("Setup/ObsidianDataWeave-pipeline.patch", "diff --git"),
+                                     ("SETUP.md", "# 🧌 VaultGoblin:")):
+                path = contained(root, root / relative)
+                if path.is_file() and path.read_text(encoding="utf-8").startswith(prefix):
+                    removed.append(path)
+    result = {"status": "planned" if not apply else "organized", "projects": len(projects),
+              "navigation_files_changed": len(changed), "obsolete_setup_files": len(removed)}
+    if not apply:
+        return result
+    backup = contained(home, home / "backups/vaultgoblin-navigation" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f"))
+    for path in dict.fromkeys([*changed, *removed]):
+        if path.exists():
+            data = path.read_bytes()
+            target = contained(backup, backup / path.relative_to(root))
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            target.write_bytes(data)
+            if target.read_bytes() != data or path.read_bytes() != data:
+                raise ValueError(f"File changed while making its backup: {path}")
+    for path, text in changed.items():
+        atomic_write(path, text)
+    for path in removed:
+        path.unlink()
+    for path in sorted((root / "Setup").rglob("*"), reverse=True):
+        if path.is_dir() and not path.is_symlink() and not any(path.iterdir()):
+            path.rmdir()
+    if (root / "Setup").is_dir() and not any((root / "Setup").iterdir()):
+        (root / "Setup").rmdir()
+    config_path = home / "shared-knowledge.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if config.get("project_navigation") is not True:
+        config["project_navigation"] = True
+        atomic_write(config_path, json.dumps(config, ensure_ascii=False, indent=2) + "\n")
+    if backup.exists():
+        result["backup"] = str(backup)
+    return result
 
 
 def recover_topic_backups(home: Path, device: str, known: set[str]) -> tuple[list[dict], dict[str, Path]]:
@@ -367,7 +523,7 @@ def recover_topic_backups(home: Path, device: str, known: set[str]) -> tuple[lis
     return [record for record, _ in recovered.values()], {record["id"]: path for record, path in recovered.values()}
 
 
-def export_topics(home: Path, vault: Path, device: str) -> dict:
+def export_topics(home: Path, vault: Path, device: str, if_changed: bool = False) -> dict:
     native = home / "memories"
     documents = {}
     stamps = {}
@@ -387,6 +543,8 @@ def export_topics(home: Path, vault: Path, device: str) -> dict:
     devices = contained(vault, vault / FOLDER / "devices")
     folder = contained(vault, devices / device)
     previous = load_manifest(folder, device)
+    if if_changed and previous.get("source_sha256") == digest and previous.get("history_imported"):
+        return {"status": "unchanged", "device": device}
     prior_notes = list(previous.get("notes", []))
     recovered_paths = {}
     # An intentionally deleted export must not resurrect old backups on its next fresh install.
@@ -833,6 +991,11 @@ def main() -> int:
     setup.add_argument("--device", required=True)
     export_command = commands.add_parser("export", help="Refresh only this device's linked topics")
     export_command.add_argument("--quiet", action="store_true", help="Suppress successful output for hooks")
+    export_command.add_argument("--if-changed", action="store_true", help="Skip unchanged native memory after filesystem events")
+    commands.add_parser("watch", help="Export on completed memory writes without polling (Linux)")
+    navigation = commands.add_parser("organize", help="Plan project navigation while preserving device exports")
+    navigation.add_argument("--apply", action="store_true", help="Write navigation and keep future event updates enabled")
+    navigation.add_argument("--clean-setup", action="store_true", help="Back up and remove recognized obsolete setup snapshots")
     commands.add_parser("install-hooks", help="Configure export hooks without replacing other handlers")
     find = commands.add_parser("search", help="Search generated topics and older device snapshots")
     find.add_argument("query")
@@ -855,7 +1018,12 @@ def main() -> int:
         elif args.command == "install-hooks":
             result = install_hooks(home)
         elif args.command == "export":
-            result = export(home)
+            result = export(home, if_changed=args.if_changed)
+        elif args.command == "watch":
+            watch(home)
+            return 0
+        elif args.command == "organize":
+            result = organize(home, args.apply, args.clean_setup)
         elif args.command == "read":
             result = read_note(home, args.note_id, args.max_chars, args.full)
         elif args.command == "recall":
@@ -864,6 +1032,8 @@ def main() -> int:
             result = search(home, args.query, args.limit, args.project, args.max_chars)
         if not getattr(args, "quiet", False):
             print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    except KeyboardInterrupt:
         return 0
     except ExportBusyError as error:
         if getattr(args, "quiet", False):

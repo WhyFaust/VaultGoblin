@@ -71,6 +71,12 @@ python3 skills/codex-shared-knowledge/scripts/shared_knowledge.py export
 
 ## 🗂️ Устройство проекта
 
+Внутри `Codex Knowledge` команда `organize --apply --clean-setup` создаёт
+`README.md` и страницы `Projects/` с названиями тем, разделением актуального
+и архивного контекста. Служебные `devices/` остаются совместимыми со вторым ПК;
+старые установочные копии из `Setup` сохраняются в локальном backup и убираются
+из vault. Подробнее — [автоматизация и навигация](docs/automation.md).
+
 | Путь | Содержимое |
 |---|---|
 | [skills/codex-shared-knowledge/](skills/codex-shared-knowledge/SKILL.md) | Устанавливаемый навык, экспорт и ограниченный поиск общих знаний |
