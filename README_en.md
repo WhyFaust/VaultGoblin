@@ -71,6 +71,12 @@ when requested. Historical findings must be checked against current sources.
 
 ## 🗂️ Project layout
 
+Within `Codex Knowledge`, `organize --apply --clean-setup` creates a `README.md`
+and readable `Projects/` pages, separating current and archived context. Device
+exports keep their existing files and IDs for compatibility. Recognized legacy
+setup snapshots are backed up locally and removed from the vault. See
+[automation and navigation](docs/automation_en.md).
+
 | Path | Contents |
 |---|---|
 | [skills/codex-shared-knowledge/](skills/codex-shared-knowledge/SKILL.md) | Installable skill, export and bounded shared-knowledge search |

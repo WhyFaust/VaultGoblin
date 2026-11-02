@@ -54,25 +54,11 @@ python3 skills/codex-shared-knowledge/scripts/shared_knowledge.py read "ID-ИЗ-
 
 ## Автоэкспорт
 
-Экспорт выполняется отдельно от поиска и не вызывает модель. На Windows:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\skills\codex-shared-knowledge\scripts\install_export_task.ps1 -PythonPath (Get-Command python.exe).Source
-```
-
-Задача `Codex Shared Knowledge Export` запускается при входе и каждые 5 минут
-для текущего пользователя. Лог: `CODEX_HOME/shared-knowledge-export.log`.
-Задача использует текущий клон; не переносите его без переустановки задачи.
-Если Python находится в `.venv`, передайте его полный путь в `-PythonPath`.
-
-На Linux используйте уже настроенный пользовательский systemd timer. Команда:
-
-```text
-/absolute/path/to/python3 /absolute/path/to/VaultGoblin/skills/codex-shared-knowledge/scripts/shared_knowledge.py export
-```
-
-Сохраните в сервисе местный `CODEX_HOME`, если он отличается от `~/.codex`.
-Без планировщика экспорт можно запускать вручную.
+На Linux используйте событийный `watch`: он ждёт записи файлов памяти и не
+опрашивает их по расписанию. Установка зависимости и пример фонового сервиса —
+в [руководстве автоматизации](automation.md). Прежний таймер и экспорт на каждый
+конец чата отключите. На Windows остаются ручной экспорт и прежние совместимые
+сценарии; нативный наблюдатель этой версии предназначен для Linux.
 
 ## Обновление существующей установки
 
@@ -88,7 +74,7 @@ python3 skills/codex-shared-knowledge/scripts/shared_knowledge.py export
 Установленный навык — рабочая копия, редактировать нужно исходники в Git-клоне.
 
 После перехода со старой структуры переустановите задачу или поправьте `ExecStart`
-таймера: скрипт теперь находится в `skills/codex-shared-knowledge/scripts/`.
+сервиса: скрипт теперь находится в `skills/codex-shared-knowledge/scripts/`.
 Для импорта и Wiki перенесите свой `config.toml`, `processed.json` и реестры из
 прежней папки компонента в `pipeline/`, не заменяя их примером. Индекс vault теперь
 по умолчанию в `~/.cache/vaultgoblin/`: его можно построить заново явной командой

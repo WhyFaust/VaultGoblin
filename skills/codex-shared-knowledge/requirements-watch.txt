@@ -1,0 +1,2 @@
+# Optional Linux filesystem notifications; recall/export need only the standard library.
+watchdog>=6.0,<7

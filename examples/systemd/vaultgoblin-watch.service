@@ -1,0 +1,18 @@
+[Unit]
+Description=Export changed Codex memory with VaultGoblin
+StartLimitIntervalSec=30s
+StartLimitBurst=3
+
+[Service]
+Type=simple
+Environment=CODEX_HOME=%h/.codex
+WorkingDirectory=%h/dev/VaultGoblin
+ExecStart=%h/dev/VaultGoblin/.venv/bin/python %h/dev/VaultGoblin/skills/codex-shared-knowledge/scripts/shared_knowledge.py watch
+Restart=on-failure
+RestartSec=2s
+KillSignal=SIGINT
+TimeoutStopSec=10s
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -52,27 +52,13 @@ does not prove absence. `--project` is a strict filter; omit it for general cont
 `warnings` reports incomplete synchronization or a changed source.
 See [format, search limits and recovery](shared-knowledge_en.md).
 
-## Scheduled exports
+## Automatic exports
 
-Export is separate from search and makes no model calls. On Windows:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\skills\codex-shared-knowledge\scripts\install_export_task.ps1 -PythonPath (Get-Command python.exe).Source
-```
-
-The `Codex Shared Knowledge Export` task runs at sign-in and every 5 minutes for
-the current user. Log: `CODEX_HOME/shared-knowledge-export.log`. It uses the current
-clone; reinstall the task if you move it. For a `.venv` interpreter, pass its full
-path as `-PythonPath`.
-
-On Linux, reuse your existing user systemd timer. Command:
-
-```text
-/absolute/path/to/python3 /absolute/path/to/VaultGoblin/skills/codex-shared-knowledge/scripts/shared_knowledge.py export
-```
-
-Keep the local `CODEX_HOME` in the service if it differs from `~/.codex`.
-Without a scheduler, you can run export manually.
+On Linux use the event-driven `watch` command: it waits for completed memory writes
+without scheduled polling. See [automation](automation_en.md) for its optional
+dependency and background service. Disable the previous timer and per-turn export
+hooks. Windows retains manual export and legacy compatible workflows; this version
+of the native watcher targets Linux.
 
 ## Update an existing installation
 

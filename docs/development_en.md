@@ -61,3 +61,13 @@ no personal paths or credentials. Use `tempfile` for new temporary files.
 When moving a script, update callers, skill instructions, scheduling and both
 guides. Keep Wiki snapshot checks, link validation and writes through the writer.
 Index changes must remain compatible with existing installations.
+
+## Linux watcher check
+
+```bash
+.venv/bin/python -m pip install -r skills/codex-shared-knowledge/requirements-watch.txt
+.venv/bin/python skills/codex-shared-knowledge/tests/check_memory_watcher.py
+```
+
+The integration check uses temporary files, including atomic replacement and a
+new write during export. It never modifies real Codex memory.
