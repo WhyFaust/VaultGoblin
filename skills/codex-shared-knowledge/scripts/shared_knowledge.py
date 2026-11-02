@@ -192,7 +192,7 @@ class ExportBusyError(ValueError):
 
 
 @contextmanager
-def export_lock(home: Path):
+def export_lock(home: Path, wait: bool = False):
     """Serialize this profile's manual and scheduled exports; release on process exit."""
     with (home / "shared-knowledge-export.lock").open("a+b") as stream:
         if stream.tell() == 0:
@@ -202,10 +202,10 @@ def export_lock(home: Path):
         try:
             if os.name == "nt":
                 import msvcrt
-                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK if wait else msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
-                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
         except OSError as error:
             raise ExportBusyError("Another export is running; retry later.") from error
         try:
@@ -326,10 +326,52 @@ def backup_and_remove(home: Path, device: str, path: Path, expected_id: str | No
     path.unlink()
 
 
-def export(home: Path, if_changed: bool = False) -> dict:
+def sources_open_for_write(native: Path) -> bool:
+    """Inspect Linux descriptor metadata for writers of these two source inodes."""
+    targets = set()
+    for name in SOURCES:
+        try:
+            stamp = (native / name).stat()
+            targets.add((stamp.st_dev, stamp.st_ino))
+        except FileNotFoundError:
+            continue
+    if not targets:
+        return False
+    # Open notifications lack access modes and cannot describe pre-startup handles.
+    for process in Path("/proc").iterdir():
+        if not process.name.isdecimal():
+            continue
+        try:
+            if process.stat().st_uid != os.geteuid():
+                continue
+            descriptors = list((process / "fd").iterdir())
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            continue
+        for descriptor in descriptors:
+            try:
+                stamp = descriptor.stat()
+            except (FileNotFoundError, ProcessLookupError, PermissionError):
+                continue
+            if (stamp.st_dev, stamp.st_ino) not in targets:
+                continue
+            try:
+                info = (process / "fdinfo" / descriptor.name).read_text(encoding="ascii")
+            except (FileNotFoundError, ProcessLookupError):
+                continue
+            except PermissionError:
+                return True
+            flags = re.search(r"(?m)^flags:\s*([0-7]+)$", info)
+            if flags is None or int(flags[1], 8) & os.O_ACCMODE != os.O_RDONLY:
+                return True
+    return False
+
+
+def export(home: Path, if_changed: bool = False, *, wait_for_lock: bool = False, require_closed: bool = False) -> dict:
     vault, device = settings(home)
-    with export_lock(home):
-        return export_topics(home, vault, device, if_changed)
+    with export_lock(home, wait=wait_for_lock):
+        if require_closed and sources_open_for_write(home / "memories"):
+            return {"status": "source_busy", "device": device}
+        return export_topics(home, vault, device, if_changed, require_closed)
 
 
 def watch(home: Path) -> None:
@@ -373,7 +415,7 @@ def watch(home: Path) -> None:
         while True:
             pending.wait()
             pending.clear()
-            export(home, if_changed=True)
+            export(home, if_changed=True, wait_for_lock=True, require_closed=True)
             if navigation:
                 try:
                     organize(home, apply=True)
@@ -523,7 +565,7 @@ def recover_topic_backups(home: Path, device: str, known: set[str]) -> tuple[lis
     return [record for record, _ in recovered.values()], {record["id"]: path for record, path in recovered.values()}
 
 
-def export_topics(home: Path, vault: Path, device: str, if_changed: bool = False) -> dict:
+def export_topics(home: Path, vault: Path, device: str, if_changed: bool = False, require_closed: bool = False) -> dict:
     native = home / "memories"
     documents = {}
     stamps = {}
@@ -533,11 +575,15 @@ def export_topics(home: Path, vault: Path, device: str, if_changed: bool = False
             before = path.stat()
             documents[name] = path.read_text(encoding="utf-8")
             stamps[name] = before
+    if require_closed and sources_open_for_write(native):
+        return {"status": "source_busy", "device": device}
     if not any(text.strip() for text in documents.values()):
         return {"status": "no_local_memory", "device": device}
     for name, before in stamps.items():
         after = (native / name).stat()
         if (before.st_mtime_ns, before.st_size) != (after.st_mtime_ns, after.st_size):
+            if require_closed:
+                return {"status": "source_busy", "device": device}
             raise ValueError("Native memories changed while reading. Retry export.")
     digest = hashlib.sha256(json.dumps(documents, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     devices = contained(vault, vault / FOLDER / "devices")

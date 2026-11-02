@@ -16,6 +16,11 @@ python3 -m venv .venv
 and `memory_summary.md`, atomic replacement and deletion. Changes received during
 an export remain pending for the next pass. Unrelated files, reads and idle time
 trigger no exports. Startup performs one reconciliation for offline changes.
+When a manual export holds the lock, the watcher waits for the kernel to release
+it while retaining incoming events. Linux descriptor metadata for both sources
+is checked before and after reading the snapshot. An open writer defers saving
+until close; an open reader does not block export. This also covers writers
+that were already open before the watcher started.
 `export --if-changed` compares the two source contents with the last manifest and
 skips regenerating unchanged notes. Search and manual export still need only the
 standard library. No model calls or transcript reads are involved.

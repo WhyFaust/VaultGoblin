@@ -41,10 +41,10 @@ root=Path(__file__).parent
 spec=importlib.util.spec_from_file_location('shared', sys.argv[1])
 shared=importlib.util.module_from_spec(spec); spec.loader.exec_module(shared)
 original=shared.export
-def tracked(home, if_changed=False):
+def tracked(home, if_changed=False, **kwargs):
     (root/'busy').write_bytes(b'1')
     try:
-        result=original(home,if_changed=if_changed)
+        result=original(home,if_changed=if_changed,**kwargs)
         with (root/'calls').open('ab') as stream: stream.write(b'1\\n')
         if (root/'hold').exists():
             (root/'ready').write_bytes(b'1')

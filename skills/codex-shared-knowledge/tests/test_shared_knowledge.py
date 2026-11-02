@@ -273,6 +273,25 @@ class SharedKnowledgeTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertEqual(result.stderr, "")
 
+    def test_closed_source_guard_defers_before_reading_a_snapshot(self):
+        shared.export(self.home)
+        before = (self.vault / shared.FOLDER / 'devices/first-pc/manifest.json').read_bytes()
+        with patch.object(shared, 'sources_open_for_write', return_value=True), \
+             patch.object(shared, 'export_topics', side_effect=AssertionError('Source is still being written')):
+            result = shared.export(self.home, require_closed=True)
+        self.assertEqual(result['status'], 'source_busy')
+        self.assertEqual((self.vault / shared.FOLDER / 'devices/first-pc/manifest.json').read_bytes(), before)
+
+    def test_closed_source_guard_defers_a_writer_opened_during_the_read(self):
+        shared.export(self.home)
+        folder = self.vault / shared.FOLDER / 'devices/first-pc'
+        before = {path.name: path.read_bytes() for path in folder.iterdir() if path.is_file()}
+        (self.native / 'MEMORY.md').write_text('# PartialTopic\n\nUnfinished fact\n', encoding='utf-8')
+        with patch.object(shared, 'sources_open_for_write', side_effect=[False, True]):
+            result = shared.export(self.home, require_closed=True)
+        self.assertEqual(result['status'], 'source_busy')
+        self.assertEqual({path.name: path.read_bytes() for path in folder.iterdir() if path.is_file()}, before)
+
     def test_project_navigation_preserves_exports_and_is_idempotent(self):
         self.write_topics(first_body="applies_to: cwd=/work/example-app;\nUseful fact")
         shared.export(self.home)

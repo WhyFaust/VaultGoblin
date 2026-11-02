@@ -42,3 +42,4 @@ jobs:
         run: |
           python -m pip install -r skills/codex-shared-knowledge/requirements-watch.txt
           python skills/codex-shared-knowledge/tests/check_memory_watcher.py
+          python skills/codex-shared-knowledge/tests/check_watcher_safety.py -q
