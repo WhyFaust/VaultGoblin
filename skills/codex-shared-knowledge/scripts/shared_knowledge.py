@@ -2,14 +2,12 @@
 """Export local Codex memories as linked topics and read only this shared layer."""
 
 import argparse
-import base64
 import hashlib
 import json
 import os
 import re
 import shlex
 import sqlite3
-import subprocess
 import sys
 import tempfile
 import threading
@@ -154,13 +152,8 @@ def install_hooks(home: Path) -> dict:
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     if os.name == "nt" and not pythonw.is_file():
         raise ValueError(f"Windowless Python not found: {pythonw}")
-    bootstrap = (f"import runpy,sys;sys.path.insert(0,{str(script.parent)!r});"
-                 f"sys.argv={list(map(str, (script, home)))!r};"
-                 f"runpy.run_path({str(script)!r},run_name='__main__')")
-    payload = base64.b64encode(bootstrap.encode("utf-8")).decode("ascii")
-    windows_command = subprocess.list2cmdline([
-        str(pythonw), "-c", f"import base64;exec(base64.b64decode('{payload}'))",
-    ])
+    quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+    windows_command = "& " + " ".join(quote(arg) for arg in (pythonw, "-B", script, home)) + "; exit $LASTEXITCODE"
     command = shlex.join([sys.executable, "-B", str(script), str(home)])
     for event in ("Stop", "SessionEnd"):
         groups = hooks.get(event, [])

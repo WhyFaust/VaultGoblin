@@ -1,3 +1,4 @@
+import base64
 import importlib.util
 import json
 import os
@@ -84,7 +85,15 @@ class SharedKnowledgeTests(unittest.TestCase):
         native.mkdir()
         original = "# Hook test\n\nSource data stays unchanged.\n"
         (native / "MEMORY.md").write_text(original, encoding="utf-8")
-        shared.install_hooks(home)
+        python = sys.executable
+        if os.name == "nt":
+            environment = self.root / "Python $O'Brien with spaces"
+            result = subprocess.run([python, "-m", "venv", "--without-pip", str(environment)],
+                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            python = str(environment / "Scripts/python.exe")
+        with patch.object(shared.sys, "executable", python):
+            shared.install_hooks(home)
         script = home / "skills/codex-shared-knowledge/scripts/shared_knowledge.py"
         launcher = script.with_name("export_background.py")
         launcher.write_text(
@@ -94,7 +103,12 @@ class SharedKnowledgeTests(unittest.TestCase):
             f"runpy.run_path({str(script)!r}, run_name='__main__')\n", encoding="utf-8")
         config = json.loads((home / "hooks.json").read_text(encoding="utf-8"))
         handler = config["hooks"]["Stop"][0]["hooks"][0]
-        command = handler["commandWindows"] if os.name == "nt" else handler["command"]
+        if os.name == "nt":
+            self.assertTrue(handler["commandWindows"].startswith("& "))
+            command = ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                       base64.b64encode(handler["commandWindows"].encode("utf-16le")).decode("ascii")]
+        else:
+            command = handler["command"]
         completed = subprocess.run(command, shell=os.name != "nt", input='{"hook_event_name":"Stop"}',
                                    capture_output=True, text=True, encoding="utf-8", timeout=15)
         self.assertEqual(completed.returncode, 0, completed.stderr)
