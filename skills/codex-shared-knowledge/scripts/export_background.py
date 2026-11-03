@@ -10,22 +10,23 @@ from shared_knowledge import contained
 EXPORT_TIMEOUT = 240
 
 
-def run(home: Path, wait: bool) -> int:
+def run(home: Path, wait: bool, *, launcher: Path | None = None) -> int:
     home = home.expanduser().resolve()
+    launcher = (launcher or Path(__file__)).resolve()
     log_path = contained(home, home / "shared-knowledge-export.log")
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     with log_path.open("a", encoding="utf-8") as log:
         try:
             if not wait:
                 subprocess.Popen(
-                    [sys.executable, "-B", str(Path(__file__).resolve()), str(home), "--wait"],
+                    [sys.executable, "-B", str(launcher), str(home), "--wait"],
                     stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                     creationflags=flags, start_new_session=os.name != "nt",
                 )
                 return 0
             python = Path(sys.executable).with_name("python.exe") if os.name == "nt" else Path(sys.executable)
             result = subprocess.run(
-                [str(python), "-B", str(Path(__file__).with_name("shared_knowledge.py")),
+                [str(python), "-B", str(launcher.with_name("shared_knowledge.py")),
                  "export", "--if-changed", "--quiet"],
                 env={**os.environ, "CODEX_HOME": str(home)}, stdin=subprocess.DEVNULL,
                 stdout=log, stderr=subprocess.STDOUT, creationflags=flags, timeout=EXPORT_TIMEOUT,
