@@ -94,7 +94,7 @@ class SharedKnowledgeTests(unittest.TestCase):
             python = str(environment / "Scripts/python.exe")
         with patch.object(shared.sys, "executable", python):
             shared.install_hooks(home)
-        script = home / "skills/codex-shared-knowledge/scripts/shared_knowledge.py"
+        script = home / "vaultgoblin/runtime/shared_knowledge.py"
         launcher = script.with_name("export_background.py")
         launcher.write_text(
             "import os,runpy,sys\n"
@@ -133,6 +133,7 @@ function New-ScheduledTaskAction { param($Execute, $Argument); @{Execute=$Execut
 function New-ScheduledTaskTrigger { @{} }
 function New-ScheduledTaskPrincipal { @{} }
 function New-ScheduledTaskSettingsSet { @{} }
+function Get-ScheduledTask { $null }
 function Register-ScheduledTask {
     param($TaskName, $Action, $Trigger, $Principal, $Settings, $Description, [switch]$Force)
     $global:VaultGoblinCapturedTask = @{TaskName=$TaskName; Action=$Action}
@@ -148,7 +149,7 @@ $global:VaultGoblinCapturedTask | ConvertTo-Json -Depth 5 -Compress
             text=True, encoding="utf-8", timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         task = json.loads(result.stdout)
-        self.assertEqual(task["TaskName"], "Codex Shared Knowledge Export")
+        self.assertRegex(task["TaskName"], r"^Codex Shared Knowledge Export-[A-F0-9]{12}$")
         self.assertEqual(Path(task["Action"]["Execute"]).name.lower(), "pythonw.exe")
         command = '"' + task["Action"]["Execute"] + '" ' + task["Action"]["Arguments"]
         result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", timeout=15)

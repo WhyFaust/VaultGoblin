@@ -95,7 +95,7 @@ def settings(home: Path) -> tuple[Path, str]:
     return vault, device
 
 
-def install(vault: Path, device: str, home: Path) -> dict:
+def installation_settings(vault: Path, device: str, home: Path) -> dict:
     vault = vault.expanduser().resolve()
     if not vault.is_dir():
         raise ValueError(f"Obsidian vault directory not found: {vault}")
@@ -109,6 +109,25 @@ def install(vault: Path, device: str, home: Path) -> dict:
     if (devices / f"{device}.md").exists() or (devices / device).exists():
         if not config_path.exists() or settings(home) != (vault, device):
             raise ValueError(f"Device '{device}' already has a snapshot. Choose another device name.")
+    local_settings.update(vault_path=str(vault), device=device)
+    return local_settings
+
+
+def install_runtime(home: Path) -> Path:
+    source = Path(__file__).resolve().parent
+    destination = contained(home, home / "vaultgoblin" / "runtime")
+    for name in ("shared_knowledge.py", "export_background.py", "install_export_task.ps1"):
+        target = contained(home, destination / name)
+        content = (source / name).read_text(encoding="utf-8")
+        if not target.exists() or target.read_text(encoding="utf-8") != content:
+            atomic_write(target, content)
+    return destination
+
+
+def install(vault: Path, device: str, home: Path) -> dict:
+    vault = vault.expanduser().resolve()
+    local_settings = installation_settings(vault, device, home)
+    config_path = contained(home, home / "shared-knowledge.json")
     source = Path(__file__).resolve().parents[1]
     destination = contained(home, home / "skills" / "codex-shared-knowledge")
     for relative in ("SKILL.md", "scripts/shared_knowledge.py", "scripts/export_background.py",
@@ -130,10 +149,10 @@ def install(vault: Path, device: str, home: Path) -> dict:
         instructions = instructions.rstrip() + "\n\n" + RECALL_RULE + "\n"
     if not agent_path.exists() or agent_path.read_text(encoding="utf-8") != instructions:
         atomic_write(agent_path, instructions)
-    local_settings.update(vault_path=str(vault), device=device)
     if (source.parents[1] / ".git").exists() and (source.parents[1] / "pipeline").is_dir():
         local_settings["repository_path"] = str(source.parents[1].resolve())
     atomic_write(config_path, json.dumps(local_settings, ensure_ascii=False, indent=2) + "\n")
+    install_runtime(home)
     return {"status": "installed", "skill": str(destination), "vault": str(vault), "device": device}
 
 
@@ -146,9 +165,7 @@ def install_hooks(home: Path) -> dict:
     if not isinstance(config, dict) or not isinstance(config.get("hooks", {}), dict):
         raise ValueError("hooks.json must contain a hooks object")
     hooks = config.setdefault("hooks", {})
-    script = contained(home, home / "skills/codex-shared-knowledge/scripts/export_background.py")
-    if not script.is_file():
-        raise ValueError("Install the shared-knowledge skill before installing hooks")
+    script = install_runtime(home) / "export_background.py"
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     if os.name == "nt" and not pythonw.is_file():
         raise ValueError(f"Windowless Python not found: {pythonw}")
