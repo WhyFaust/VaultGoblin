@@ -40,8 +40,48 @@ Disable the previous periodic timer. Do not also export on every `Stop` or
 `SessionEnd`: memory may be written later. Codex has no documented `MemoryUpdated`
 event; see [official hooks](https://learn.chatgpt.com/docs/hooks).
 The watcher does not require Codex hook trust or change `trusted_hash`.
-`install-hooks` and the old Windows task installer remain for compatibility.
-This version of `watch` supports Linux; search and manual export remain portable.
+This version of `watch` supports Linux.
+
+## Windows
+
+After installing the skill, run from the clone root:
+
+```powershell
+python .\skills\codex-shared-knowledge\scripts\shared_knowledge.py install-hooks
+& .\skills\codex-shared-knowledge\scripts\install_export_task.ps1 -PythonPath (Get-Command python.exe).Source
+```
+
+`install-hooks` merges `Stop` and `SessionEnd` handlers into the existing
+`CODEX_HOME/hooks.json`, preserving other hooks and a backup of the previous file.
+Open Codex `/hooks` and review the new definitions. The installer does not change
+hook trust. Hooks export only native memory, without reading chats or calling a model.
+
+Each hook quickly starts a separate export process bounded to 240 seconds.
+`SessionEnd` runs synchronously, so it does not wait for the export itself.
+The `Codex Shared Knowledge Export` task runs at logon and every five minutes:
+Codex has no documented memory-write event, and memory may change after hooks.
+`export --if-changed` skips unchanged sources; the shared lock prevents concurrent
+export writes for one profile.
+
+Both paths start through `pythonw.exe`; the child `python.exe` uses
+`CREATE_NO_WINDOW`. No console is allocated. Standard output, errors and exit
+codes are appended to `CODEX_HOME/shared-knowledge-export.log`. The task also
+reports its exit code through `LastTaskResult`. The selected `python.exe` must
+have a sibling `pythonw.exe`.
+
+To upgrade an existing installation, first repeat `install` with the previous
+`vault_path` and `device`, then run both commands above. They replace only
+VaultGoblin handlers and the task with that name; repeating them adds no duplicates.
+`repository_path` and custom local settings are preserved when installing from
+the same clone. You can back up the old task XML first:
+
+```powershell
+Export-ScheduledTask -TaskName 'Codex Shared Knowledge Export' | Set-Content -Encoding UTF8 "$env:TEMP\codex-shared-knowledge-task.xml"
+```
+
+The old action started console-host `powershell.exe` and hid its window only
+after startup. The new task action starts `pythonw.exe` directly, retaining the
+fallback export for delayed memory writes.
 
 ## Readable vault structure
 

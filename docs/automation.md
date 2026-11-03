@@ -42,8 +42,47 @@ systemctl --user enable --now vaultgoblin-watch.service
 В документированном списке Codex нет отдельного `MemoryUpdated`:
 [официальные хуки](https://learn.chatgpt.com/docs/hooks).
 Наблюдатель не требует доверия хукам Codex и не меняет `trusted_hash`.
-`install-hooks` и старый установщик задачи Windows сохранены для совместимости;
-эта версия `watch` поддерживает Linux. На Windows поиск и ручной экспорт работают.
+Эта версия `watch` поддерживает Linux.
+
+## Windows
+
+После установки навыка из корня клона выполните:
+
+```powershell
+python .\skills\codex-shared-knowledge\scripts\shared_knowledge.py install-hooks
+& .\skills\codex-shared-knowledge\scripts\install_export_task.ps1 -PythonPath (Get-Command python.exe).Source
+```
+
+`install-hooks` объединяет обработчики `Stop` и `SessionEnd` с существующим
+`CODEX_HOME/hooks.json`, сохраняя остальные hooks и резервную копию прежнего файла.
+Откройте Codex `/hooks` и проверьте новые определения. Установщик не меняет доверие
+к hooks. Они экспортируют только нативную память, не читая чаты и не вызывая модель.
+
+Hook быстро запускает отдельный процесс экспорта, ограниченный 240 секундами.
+`SessionEnd` выполняется синхронно, поэтому не ждёт самого экспорта. Задача
+`Codex Shared Knowledge Export` работает при входе и каждые 5 минут: у Codex нет
+документированного события записи памяти, и она может обновиться после hooks.
+`export --if-changed` пропускает неизменившиеся источники; общая блокировка
+предотвращает одновременную запись экспорта одного профиля.
+
+Оба пути запускаются через `pythonw.exe`; дочерний `python.exe` создаётся с
+`CREATE_NO_WINDOW`. Консоль не создаётся. Обычный вывод, ошибки и коды завершения
+добавляются в `CODEX_HOME/shared-knowledge-export.log`. Для задачи код ошибки также
+доступен как `LastTaskResult`. Рядом с выбранным `python.exe` нужен `pythonw.exe`.
+
+Чтобы обновить старую установку, сначала повторите `install` с прежними
+`vault_path` и `device`, затем обе команды выше. Они заменят только обработчики
+VaultGoblin и задачу с указанным именем; повторная установка не создаёт дубликатов.
+Настройки `repository_path` и дополнительные местные поля сохраняются при
+установке из того же клона. Предварительно можно сохранить XML старой задачи:
+
+```powershell
+Export-ScheduledTask -TaskName 'Codex Shared Knowledge Export' | Set-Content -Encoding UTF8 "$env:TEMP\codex-shared-knowledge-task.xml"
+```
+
+Старая команда запускала консольный `powershell.exe` и скрывала окно только после
+старта. Новое действие задачи напрямую запускает `pythonw.exe`, сохраняя резервный
+экспорт поздней памяти.
 
 ## Читаемая структура vault
 

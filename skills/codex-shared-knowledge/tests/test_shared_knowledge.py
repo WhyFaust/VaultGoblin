@@ -1,3 +1,4 @@
+import base64
 import importlib.util
 import json
 import os
@@ -39,9 +40,11 @@ class SharedKnowledgeTests(unittest.TestCase):
 
     def test_hooks_preserve_foreign_handlers_and_are_idempotent(self):
         foreign = {"type": "command", "command": "existing-hook"}
+        old = {"type": "command", "command": "previous-export", "statusMessage": shared.EXPORT_HOOK}
         config = {"description": "Existing config", "hooks": {
             "PreToolUse": [{"matcher": "Bash", "hooks": [foreign]}],
-            "Stop": [{"hooks": [foreign]}],
+            "Stop": [{"hooks": [foreign, old]}],
+            "SessionEnd": [{"hooks": [foreign, old]}],
         }}
         path = self.home / "hooks.json"
         original = json.dumps(config)
@@ -54,6 +57,8 @@ class SharedKnowledgeTests(unittest.TestCase):
         self.assertEqual(actual["hooks"]["PreToolUse"], config["hooks"]["PreToolUse"])
         self.assertEqual(actual["hooks"]["Stop"][0]["hooks"], [foreign])
         for event in ("Stop", "SessionEnd"):
+            self.assertEqual(actual["hooks"][event][0]["hooks"], [foreign])
+            self.assertEqual(len(actual["hooks"][event]), 2)
             own = actual["hooks"][event][-1]["hooks"][0]
             self.assertEqual(own["statusMessage"], shared.EXPORT_HOOK)
             self.assertEqual(own.get("async", False), event == "Stop")
@@ -80,10 +85,30 @@ class SharedKnowledgeTests(unittest.TestCase):
         native.mkdir()
         original = "# Hook test\n\nSource data stays unchanged.\n"
         (native / "MEMORY.md").write_text(original, encoding="utf-8")
-        shared.install_hooks(home)
+        python = sys.executable
+        if os.name == "nt":
+            environment = self.root / "Python $O'Brien with spaces"
+            result = subprocess.run([python, "-m", "venv", "--without-pip", str(environment)],
+                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            python = str(environment / "Scripts/python.exe")
+        with patch.object(shared.sys, "executable", python):
+            shared.install_hooks(home)
+        script = home / "skills/codex-shared-knowledge/scripts/shared_knowledge.py"
+        launcher = script.with_name("export_background.py")
+        launcher.write_text(
+            "import os,runpy,sys\n"
+            "os.environ['CODEX_HOME'] = sys.argv[1]\n"
+            f"sys.argv = [{str(script)!r}, 'export', '--quiet']\n"
+            f"runpy.run_path({str(script)!r}, run_name='__main__')\n", encoding="utf-8")
         config = json.loads((home / "hooks.json").read_text(encoding="utf-8"))
         handler = config["hooks"]["Stop"][0]["hooks"][0]
-        command = handler["commandWindows"].split() if os.name == "nt" else handler["command"]
+        if os.name == "nt":
+            self.assertTrue(handler["commandWindows"].startswith("& "))
+            command = ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                       base64.b64encode(handler["commandWindows"].encode("utf-16le")).decode("ascii")]
+        else:
+            command = handler["command"]
         completed = subprocess.run(command, shell=os.name != "nt", input='{"hook_event_name":"Stop"}',
                                    capture_output=True, text=True, encoding="utf-8", timeout=15)
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -97,6 +122,38 @@ class SharedKnowledgeTests(unittest.TestCase):
             completed = subprocess.run([sys.executable, str(SCRIPT), "export", "--quiet"],
                                        capture_output=True, text=True, encoding="utf-8", timeout=10)
         self.assertEqual((completed.returncode, completed.stdout, completed.stderr), (0, "", ""))
+
+    @unittest.skipUnless(os.name == "nt", "Windows Task Scheduler")
+    def test_windows_task_starts_without_a_console_host(self):
+        shared.install(self.vault, "first-pc", self.home)
+        harness = self.root / "capture-task.ps1"
+        harness.write_text("""param($Installer, $PythonPath)
+$ErrorActionPreference = 'Stop'
+function New-ScheduledTaskAction { param($Execute, $Argument); @{Execute=$Execute; Arguments=$Argument} }
+function New-ScheduledTaskTrigger { @{} }
+function New-ScheduledTaskPrincipal { @{} }
+function New-ScheduledTaskSettingsSet { @{} }
+function Register-ScheduledTask {
+    param($TaskName, $Action, $Trigger, $Principal, $Settings, $Description, [switch]$Force)
+    $global:VaultGoblinCapturedTask = @{TaskName=$TaskName; Action=$Action}
+    @{TaskName=$TaskName; State='Ready'}
+}
+& $Installer -PythonPath $PythonPath | Out-Null
+$global:VaultGoblinCapturedTask | ConvertTo-Json -Depth 5 -Compress
+""", encoding="utf-8")
+        result = subprocess.run([
+            "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(harness),
+            str(SCRIPT.with_name("install_export_task.ps1")), sys.executable,
+        ], env={**os.environ, "CODEX_HOME": str(self.home)}, capture_output=True,
+            text=True, encoding="utf-8", timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        task = json.loads(result.stdout)
+        self.assertEqual(task["TaskName"], "Codex Shared Knowledge Export")
+        self.assertEqual(Path(task["Action"]["Execute"]).name.lower(), "pythonw.exe")
+        command = '"' + task["Action"]["Execute"] + '" ' + task["Action"]["Arguments"]
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", timeout=15)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        self.assertTrue((self.vault / shared.FOLDER / "devices/first-pc/manifest.json").is_file())
 
     def test_retired_topic_recovers_after_an_interrupted_manifest_commit(self):
         native = self.native / "MEMORY.md"
