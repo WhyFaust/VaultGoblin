@@ -4,21 +4,22 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $pythonExecutable = (Resolve-Path -LiteralPath $PythonPath).ProviderPath
-$exportScript = Join-Path $PSScriptRoot 'shared_knowledge.py'
+$pythonWindowless = Join-Path (Split-Path -Parent $pythonExecutable) 'pythonw.exe'
+if (-not (Test-Path -LiteralPath $pythonWindowless -PathType Leaf)) {
+    throw "Windowless Python not found: $pythonWindowless"
+}
+$exportScript = Join-Path $PSScriptRoot 'export_background.py'
+if (-not (Test-Path -LiteralPath $exportScript -PathType Leaf)) {
+    throw 'Update codex-shared-knowledge before installing its task.'
+}
 $codexDirectory = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 $codexDirectory = (Resolve-Path -LiteralPath $codexDirectory).ProviderPath
 if (-not (Test-Path -LiteralPath (Join-Path $codexDirectory 'shared-knowledge.json'))) {
     throw 'Install codex-shared-knowledge and configure the vault first.'
 }
 
-function Quote-TaskLiteral([string]$Value) { "'" + $Value.Replace("'", "''") + "'" }
-
-$taskCommand = '$env:CODEX_HOME = ' + (Quote-TaskLiteral $codexDirectory) + '; & ' +
-    (Quote-TaskLiteral $pythonExecutable) + ' -B ' + (Quote-TaskLiteral $exportScript) +
-    ' export *> ' + (Quote-TaskLiteral (Join-Path $codexDirectory 'shared-knowledge-export.log')) +
-    '; exit $LASTEXITCODE'
-$action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
-    -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -Command "' + $taskCommand + '"')
+$action = New-ScheduledTaskAction -Execute $pythonWindowless `
+    -Argument ('-B "' + $exportScript + '" "' + $codexDirectory + '" --wait')
 $userName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $triggers = @(
     (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)),

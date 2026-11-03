@@ -57,8 +57,9 @@ See [format, search limits and recovery](shared-knowledge_en.md).
 On Linux use the event-driven `watch` command: it waits for completed memory writes
 without scheduled polling. See [automation](automation_en.md) for its optional
 dependency and background service. Disable the previous timer and per-turn export
-hooks. Windows retains manual export and legacy compatible workflows; this version
-of the native watcher targets Linux.
+hooks on Linux. On Windows, use native Codex hooks and the silent five-minute
+fallback task from that guide. The task catches memory written after a turn or
+session ends.
 
 ## Update an existing installation
 

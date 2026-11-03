@@ -9,6 +9,7 @@ import os
 import re
 import shlex
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -112,8 +113,8 @@ def install(vault: Path, device: str, home: Path) -> dict:
             raise ValueError(f"Device '{device}' already has a snapshot. Choose another device name.")
     source = Path(__file__).resolve().parents[1]
     destination = contained(home, home / "skills" / "codex-shared-knowledge")
-    for relative in ("SKILL.md", "scripts/shared_knowledge.py", "scripts/install_export_task.ps1",
-                     "tests/test_shared_knowledge.py", "requirements-watch.txt"):
+    for relative in ("SKILL.md", "scripts/shared_knowledge.py", "scripts/export_background.py",
+                     "scripts/install_export_task.ps1", "tests/test_shared_knowledge.py", "requirements-watch.txt"):
         target = contained(home, destination / relative)
         content = (source / relative).read_text(encoding="utf-8")
         if (source / relative).resolve() != target.resolve():
@@ -147,16 +148,20 @@ def install_hooks(home: Path) -> dict:
     if not isinstance(config, dict) or not isinstance(config.get("hooks", {}), dict):
         raise ValueError("hooks.json must contain a hooks object")
     hooks = config.setdefault("hooks", {})
-    script = contained(home, home / "skills/codex-shared-knowledge/scripts/shared_knowledge.py")
+    script = contained(home, home / "skills/codex-shared-knowledge/scripts/export_background.py")
     if not script.is_file():
         raise ValueError("Install the shared-knowledge skill before installing hooks")
-    args = [sys.executable, str(script), "export", "--quiet"]
-    quote = lambda value: "'" + str(value).replace("'", "''") + "'"
-    powershell = ("$env:CODEX_HOME = " + quote(home) + "; & "
-                  + " ".join(quote(arg) for arg in args) + "; exit $LASTEXITCODE")
-    windows_command = ("powershell.exe -NoProfile -NonInteractive -EncodedCommand "
-                       + base64.b64encode(powershell.encode("utf-16le")).decode("ascii"))
-    command = "CODEX_HOME=" + shlex.quote(str(home)) + " " + shlex.join(args)
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    if os.name == "nt" and not pythonw.is_file():
+        raise ValueError(f"Windowless Python not found: {pythonw}")
+    bootstrap = (f"import runpy,sys;sys.path.insert(0,{str(script.parent)!r});"
+                 f"sys.argv={list(map(str, (script, home)))!r};"
+                 f"runpy.run_path({str(script)!r},run_name='__main__')")
+    payload = base64.b64encode(bootstrap.encode("utf-8")).decode("ascii")
+    windows_command = subprocess.list2cmdline([
+        str(pythonw), "-c", f"import base64;exec(base64.b64decode('{payload}'))",
+    ])
+    command = shlex.join([sys.executable, "-B", str(script), str(home)])
     for event in ("Stop", "SessionEnd"):
         groups = hooks.get(event, [])
         if not isinstance(groups, list):
