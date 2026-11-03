@@ -68,12 +68,42 @@ def save_migration(home: Path, path: Path, previous: str, updated: str) -> None:
     atomic_write(path, updated)
 
 
+def configure_windows_task(home: Path, installer: Path, *, remove: bool = False) -> None:
+    if os.name != "nt":
+        return
+    command = ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+               "-File", str(installer)]
+    command.extend(["-Remove"] if remove else ["-PythonPath", sys.executable])
+    try:
+        completed = subprocess.run(
+            command, env={**os.environ, "CODEX_HOME": str(home)}, capture_output=True,
+            text=True, encoding="utf-8", errors="replace", timeout=30,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise ValueError("Task Scheduler outcome is unknown; inspect this profile's task before retrying.") from error
+    if completed.returncode:
+        raise ValueError(f"Task Scheduler setup failed: {completed.stderr.strip() or completed.stdout.strip()}")
+
+
+def disable_automation(home: Path, local: dict) -> dict:
+    local = {**local, "plugin_auto_export": False}
+    path = contained(home, home / "shared-knowledge.json")
+    atomic_write(path, json.dumps(local, ensure_ascii=False, indent=2) + "\n")
+    configure_windows_task(home, Path(__file__).with_name("install_export_task.ps1"), remove=True)
+    save_migration(home, *legacy_hooks(home))
+    return {"status": "configured", "vault": local.get("vault_path"), "device": local.get("device"),
+            "automatic_export": False}
+
+
 def setup(home: Path, vault: Path | None = None, device: str | None = None, *, automation: bool = True) -> dict:
     path = contained(home, home / "shared-knowledge.json")
     original = path.read_text(encoding="utf-8") if path.exists() else None
     previous = json.loads(original) if original is not None else {}
     if not isinstance(previous, dict):
         raise ValueError("Local shared-knowledge settings must be an object")
+    if not automation and vault is None and device is None:
+        return disable_automation(home, previous)
     if vault is None and not previous.get("vault_path"):
         raise ValueError("Specify --vault for the first setup")
     if device is None and not previous.get("device"):
@@ -91,21 +121,7 @@ def setup(home: Path, vault: Path | None = None, device: str | None = None, *, a
     local["plugin_auto_export"] = automation and os.name == "nt"
     atomic_write(path, json.dumps(local, ensure_ascii=False, indent=2) + "\n")
     try:
-        if os.name == "nt":
-            command = ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                       "-File", str(runtime / "install_export_task.ps1"), "-PythonPath", sys.executable]
-            if not automation:
-                command.append("-Remove")
-            completed = subprocess.run(
-                command, env={**os.environ, "CODEX_HOME": str(home)}, capture_output=True,
-                text=True, encoding="utf-8", errors="replace", timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            if completed.returncode:
-                raise ValueError(f"Task Scheduler setup failed: {completed.stderr.strip() or completed.stdout.strip()}")
-    except subprocess.TimeoutExpired as error:
-        raise ValueError("Task Scheduler outcome is unknown; inspect this profile's task before retrying. "
-                         "Settings and runtime are prepared; legacy migration has not run.") from error
+        configure_windows_task(home, runtime / "install_export_task.ps1", remove=not automation)
     except (OSError, ValueError) as error:
         raise ValueError(f"Settings and runtime are prepared; legacy migration has not run. {error}") from error
     for migration in migrations:

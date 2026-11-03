@@ -78,6 +78,8 @@ To disable automation, run Setup with `--no-automation`. It disables plugin hook
 through a local setting and removes only its current profile's task. Do this before
 removing the plugin: uninstallation does not remove the Windows task automatically.
 Settings and knowledge are retained.
+Disabling without new `--vault` or `--device` values also works when the vault is
+unavailable: it does not check FTS5 or require an installed export runtime.
 
 ### Without the plugin
 

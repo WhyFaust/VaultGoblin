@@ -75,6 +75,35 @@ class PluginInstallationTests(unittest.TestCase):
         self.assertFalse((self.home / "AGENTS.md").exists())
         self.assertFalse((self.home / "hooks.json").exists())
 
+    def test_disable_automation_without_an_available_vault_or_installed_runtime(self):
+        previous = self.configure(plugin_auto_export=True, foreign_extension={"keep": "value"})
+        self.vault.rmdir()
+        with patch.object(self.setup.subprocess, "run") as scheduler:
+            with self.assertRaisesRegex(ValueError, "Obsidian vault directory not found"):
+                self.setup.setup(self.home)
+        scheduler.assert_not_called()
+        config = self.home / "shared-knowledge.json"
+        self.assertEqual(json.loads(config.read_text(encoding="utf-8")), previous)
+        instructions = self.home / "AGENTS.md"
+        instructions.write_text("Keep existing rules.\n", encoding="utf-8")
+        foreign = {"type": "command", "command": "foreign-hook"}
+        own = {"type": "command", "statusMessage": self.shared.EXPORT_HOOK, "command": "old-export"}
+        hooks = self.home / "hooks.json"
+        hooks.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [foreign, own]}]}}), encoding="utf-8")
+        with patch.object(self.setup.sqlite3, "connect", side_effect=AssertionError("No FTS5 required")):
+            result = self.install(automation=False)
+        self.assertFalse(result["automatic_export"])
+        self.assertEqual(result["vault"], previous["vault_path"])
+        self.assertEqual(result["device"], previous["device"])
+        self.assertEqual(json.loads(config.read_text(encoding="utf-8")), {**previous, "plugin_auto_export": False})
+        self.assertEqual(json.loads(hooks.read_text(encoding="utf-8")),
+                         {"hooks": {"Stop": [{"hooks": [foreign]}]}})
+        self.assertEqual(instructions.read_text(encoding="utf-8"), "Keep existing rules.\n")
+        self.assertFalse(self.vault.exists())
+        self.assertFalse((self.home / "vaultgoblin").exists())
+        self.assertFalse((self.home / "shared-knowledge-export.log").exists())
+        self.assertEqual(self.install(automation=False), result)
+
     def test_migration_backs_up_owned_skill_and_preserves_foreign_rules_and_hooks(self):
         self.configure(foreign_extension={"key": "value"})
         skill = self.home / "skills/codex-shared-knowledge"
@@ -314,6 +343,8 @@ $profileTasks = @($global:Tasks.Values)
 $firstName = $global:Registered[0]
 $secondName = $global:Registered[2]
 $env:CODEX_HOME = $FirstHome
+Remove-Item -LiteralPath (Join-Path $FirstHome 'shared-knowledge.json')
+Remove-Item -LiteralPath (Join-Path $FirstHome 'vaultgoblin/runtime/export_background.py')
 & $Installer -Remove | Out-Null
 @{ForeignPreserved=$foreignPreserved; Registered=$global:Registered;
   LegacyMigrated=$legacyMigrated; Removed=$global:Removed; ProfileTasks=$profileTasks;

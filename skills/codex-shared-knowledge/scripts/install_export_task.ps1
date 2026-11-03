@@ -6,13 +6,6 @@ param(
 $ErrorActionPreference = 'Stop'
 $codexDirectory = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 $codexDirectory = (Resolve-Path -LiteralPath $codexDirectory).ProviderPath
-if (-not (Test-Path -LiteralPath (Join-Path $codexDirectory 'shared-knowledge.json'))) {
-    throw 'Install codex-shared-knowledge and configure the vault first.'
-}
-$exportScript = Join-Path $codexDirectory 'vaultgoblin\runtime\export_background.py'
-if (-not (Test-Path -LiteralPath $exportScript -PathType Leaf)) {
-    throw 'Run VaultGoblin setup or reinstall codex-shared-knowledge before installing its task.'
-}
 $hash = [System.Security.Cryptography.SHA256]::Create()
 try {
     $profileBytes = [System.Text.Encoding]::UTF8.GetBytes($codexDirectory.ToLowerInvariant())
@@ -33,6 +26,13 @@ if ($Remove) {
         Unregister-ScheduledTask -TaskName 'Codex Shared Knowledge Export' -Confirm:$false
     }
     return
+}
+if (-not (Test-Path -LiteralPath (Join-Path $codexDirectory 'shared-knowledge.json'))) {
+    throw 'Install codex-shared-knowledge and configure the vault first.'
+}
+$exportScript = Join-Path $codexDirectory 'vaultgoblin\runtime\export_background.py'
+if (-not (Test-Path -LiteralPath $exportScript -PathType Leaf)) {
+    throw 'Run VaultGoblin setup or reinstall codex-shared-knowledge before installing its task.'
 }
 if (-not $PythonPath) {
     $PythonPath = (Get-Command python.exe -ErrorAction Stop).Source
