@@ -30,30 +30,40 @@ flowchart LR
 
 ## 🚀 Quick start
 
-You need Python 3.10+ with SQLite FTS5 and an Obsidian vault already set up to sync:
+You need Codex with plugin support, Python 3.10+ with SQLite FTS5 and an Obsidian
+vault already set up to sync. On Windows, `python` and `pythonw.exe` must be
+available on `PATH`.
 
 ```bash
-git clone https://github.com/WhyFaust/VaultGoblin.git
-cd VaultGoblin
-python3 skills/codex-shared-knowledge/scripts/shared_knowledge.py install \
-  --vault "/path/to/Obsidian Vault" --device main-pc
-python3 skills/codex-shared-knowledge/scripts/shared_knowledge.py export
+codex plugin marketplace add WhyFaust/VaultGoblin
+codex plugin add vaultgoblin@vaultgoblin
 ```
 
-On Windows, use `python` instead of `python3`. On another computer, use its local
-path to the same vault and a different device name. When updating, keep the name
-from that computer's `~/.codex/shared-knowledge.json`.
+Open **Setup** for the installed plugin or explicitly request it in a chat:
 
-After installation, open a new Codex chat. For example:
+```text
+Use $vaultgoblin-setup. Vault: C:\Users\name\Documents\Obsidian Vault,
+device name: windows-pc.
+```
+
+For an existing installation, run Setup without new parameters to retain its
+local paths, device name and custom settings. On another computer, supply its
+path to the same vault and a different device name.
+
+On Windows, Setup configures silent exports at logon and every five minutes.
+Review and trust the new hooks in **Settings > Hooks** or `/hooks`; installing
+the plugin does not trust them automatically. Linux uses the event-driven watcher;
+macOS supports manual exports.
+
+After setup, open a new Codex chat. For example:
 
 ```text
 Recall what we decided about the SQLite migration in my-project.
 Check the findings against the current code and suggest the next step.
 ```
 
-The installer adds the skill and a small conditional recall block to `AGENTS.md`.
 Native Codex memory stays local. If it has not been generated yet, you can still
-read another device's knowledge. See [setup, scheduling and a second PC](docs/usage_en.md).
+read another device's knowledge. See [setup, migration and standalone installation](docs/usage_en.md).
 
 ## ✨ What to ask for
 
@@ -89,9 +99,10 @@ setup snapshots are backed up locally and removed from the vault. See
 | [docs/audit_en.md](docs/audit_en.md) | Independent audit and fixes |
 | [docs/development_en.md](docs/development_en.md) | Checks, layout and local data |
 
-The Git clone is the source of code. Local settings record it as `repository_path`;
-the installed skill is a deployed copy. Authentication, local paths, notes,
-exports and SQLite databases do not belong in Git.
+Make source changes in the Git clone. The plugin runs code from its active
+installation; a previous `repository_path` does not redirect it to an old clone.
+Settings, index and logs stay in `CODEX_HOME`, outside the plugin cache.
+Authentication, local paths, notes, exports and SQLite databases do not belong in Git.
 
 ## 🧪 Checks
 

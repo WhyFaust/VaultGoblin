@@ -30,30 +30,40 @@ flowchart LR
 
 ## 🚀 Быстрый старт
 
-Нужны Python 3.10+ с SQLite FTS5 и уже синхронизируемый Obsidian vault:
+Нужны Codex с поддержкой плагинов, Python 3.10+ с SQLite FTS5 и уже
+синхронизируемый Obsidian vault. На Windows `python` и `pythonw.exe` должны быть
+доступны в `PATH`.
 
 ```bash
-git clone https://github.com/WhyFaust/VaultGoblin.git
-cd VaultGoblin
-python3 skills/codex-shared-knowledge/scripts/shared_knowledge.py install \
-  --vault "/путь/к/Obsidian Vault" --device main-pc
-python3 skills/codex-shared-knowledge/scripts/shared_knowledge.py export
+codex plugin marketplace add WhyFaust/VaultGoblin
+codex plugin add vaultgoblin@vaultgoblin
 ```
 
-На Windows используйте `python` вместо `python3`. На другом ПК укажите местный путь
-к тому же vault и другое имя устройства. При обновлении сохраняйте прежнее имя
-из `~/.codex/shared-knowledge.json`.
+Откройте **Setup** у установленного плагина или явно вызовите в чате:
 
-После установки откройте новый чат Codex. Например:
+```text
+Используй $vaultgoblin-setup. Vault: C:\Users\name\Documents\Obsidian Vault,
+имя устройства: windows-pc.
+```
+
+Для существующей установки запустите Setup без новых параметров: местные пути,
+имя устройства и дополнительные настройки сохранятся. На другом ПК укажите его
+путь к тому же vault и другое имя устройства.
+
+На Windows Setup настраивает тихий экспорт при входе и раз в 5 минут.
+Новые hooks нужно проверить и разрешить в **Settings > Hooks** или `/hooks`;
+установка плагина сама по себе не предоставляет им доверие. На Linux используется
+событийный наблюдатель, на macOS доступен ручной экспорт.
+
+После настройки откройте новый чат Codex. Например:
 
 ```text
 Вспомни, что мы решили о миграции SQLite в проекте my-project.
 Сверь найденное с текущим кодом и предложи следующий шаг.
 ```
 
-Установщик добавляет навык и небольшой блок условного поиска в `AGENTS.md`.
 Исходная память Codex остаётся локальной; если она ещё не создана, можно читать
-знания другого устройства. [Установка, автоэкспорт и второй ПК](docs/usage.md).
+знания другого устройства. [Установка, миграция и вариант без плагина](docs/usage.md).
 
 ## ✨ Что можно поручить
 
@@ -89,9 +99,10 @@ python3 skills/codex-shared-knowledge/scripts/shared_knowledge.py export
 | [docs/audit.md](docs/audit.md) | Независимый аудит и исправления |
 | [docs/development.md](docs/development.md) | Проверки, структура и локальные данные |
 
-Git-клон — источник кода. Путь к нему сохраняется как `repository_path` в местных
-настройках; установленный навык — рабочая копия. Авторизация, пути, заметки,
-экспорты и SQLite-базы в Git не входят.
+Исходники меняют в Git-клоне. При работе через плагин код берётся из его активной
+установки; прежний `repository_path` не переключает выполнение на старый клон.
+Настройки, индекс и журнал остаются в `CODEX_HOME`, отдельно от кэша плагина.
+Авторизация, пути, заметки, экспорты и SQLite-базы в Git не входят.
 
 ## 🧪 Проверка
 

@@ -6,11 +6,22 @@
 
 The components are independent. Shared knowledge uses only the standard library;
 `pipeline/` owns import and Wiki processing with separate dependencies. The
-installed skill is a deployed copy, not the source of code changes.
+Git clone is where source changes belong. Root `plugin.json` is the portable
+manifest; `extensions.com.openai` points to `hooks/hooks.json` and the onboarding
+skill `skills/vaultgoblin-setup/SKILL.md`. The catalog
+`.agents/plugins/marketplace.json` exposes this root as the `vaultgoblin` plugin
+in the marketplace with the same name.
+
+Code runs from the active plugin installation. Setup and `SessionStart` refresh
+`CODEX_HOME/vaultgoblin/runtime/` for the Windows task. That runtime, the plugin
+cache and the old deployed skill copy are not sources of code changes.
 
 | Directory | Purpose |
 |---|---|
-| `skills/codex-shared-knowledge/scripts/` | Export, FTS5 search and Windows task installation |
+| `plugin.json`, `.agents/plugins/marketplace.json` | Plugin manifest and installation catalog |
+| `hooks/` | Portable hook definitions and launcher |
+| `skills/vaultgoblin-setup/` | Initial setup, migration and automation controls |
+| `skills/codex-shared-knowledge/scripts/` | Export, FTS5 search, runtime and Windows task installation |
 | `skills/codex-shared-knowledge/tests/` | Export, IDs, search boundaries and context-budget regressions |
 | `pipeline/scripts/` | Processing commands and shared modules |
 | `pipeline/prompts/` | Short model instructions, without agent installation or command catalogs |
@@ -42,6 +53,15 @@ Push-Location pipeline
 ..\.venv\Scripts\python.exe -X utf8 -m pytest -q
 Pop-Location
 ```
+
+For the plugin, check its manifest and marketplace, package-relative references,
+runtime updates and migration of old hooks while preserving unrelated settings.
+Use separate temporary `CODEX_HOME` and vault directories. Real Setup on Windows
+changes Task Scheduler, so do not run it as a routine file validation.
+
+A separate `plugin` job installs the package with `codex-cli 0.157.1` in an isolated
+`CODEX_HOME` on Ubuntu, without an API or model call. It checks package installation,
+not user hook trust or Windows Task Scheduler behavior.
 
 CI runs both suites on Linux and Windows. Tests use temporary data and mock external
 calls. They do not verify NotebookLM, Google Drive, model availability or file
