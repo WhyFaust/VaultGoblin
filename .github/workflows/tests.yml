@@ -16,7 +16,7 @@ jobs:
   plugin:
     runs-on: ubuntu-latest
     env:
-      CODEX_HOME: ${{ runner.temp }}/vaultgoblin-plugin
+      CODEX_HOME: ${{ github.workspace }}/../vaultgoblin-plugin
     steps:
       - uses: actions/checkout@v7.0.1
       - run: npm install --global @openai/codex@0.157.1

@@ -172,8 +172,8 @@ class PluginInstallationTests(unittest.TestCase):
         self.assertIn("A durable beta decision.", contents)
         self.assertEqual({path.name: path.read_bytes() for path in native.iterdir()}, sources)
 
-    def test_unconfigured_and_manual_hook_have_no_runtime_or_process_effects(self):
-        for configuration in (None, {}, {"plugin_auto_export": False}):
+    def test_unconfigured_hook_has_no_runtime_or_process_effects(self):
+        for configuration in (None, {}):
             with self.subTest(configuration=configuration):
                 if configuration is not None:
                     (self.home / "shared-knowledge.json").write_text(json.dumps(configuration), encoding="utf-8")
@@ -187,6 +187,45 @@ class PluginInstallationTests(unittest.TestCase):
                 self.assertFalse((self.home / "vaultgoblin").exists())
                 self.assertFalse((self.home / "shared-knowledge-export.log").exists())
                 self.assertEqual(list(self.vault.iterdir()), [])
+
+    def test_manual_hook_refreshes_missing_and_stale_runtime_without_exporting(self):
+        self.configure(plugin_auto_export=False)
+        config_path = self.home / "shared-knowledge.json"
+        original_config = config_path.read_bytes()
+        (self.vault / "personal-note.md").write_text("Keep this note.", encoding="utf-8")
+        original_vault = {path.name: path.read_bytes() for path in self.vault.iterdir()}
+        with patch.dict(os.environ, CODEX_HOME=str(self.home)), \
+             patch.object(sys, "argv", ["plugin_hook.py"]), \
+             patch.object(self.hook, "install_runtime") as refresh, \
+             patch.object(self.hook, "run") as export:
+            self.assertEqual(self.hook.main(), 0)
+        refresh.assert_not_called()
+        export.assert_not_called()
+        self.assertFalse((self.home / "vaultgoblin").exists())
+        bundle = self.root / "manual plugin cache"
+        bundle.mkdir()
+        names = ("shared_knowledge.py", "export_background.py", "install_export_task.ps1")
+        runtime = self.home / "vaultgoblin/runtime"
+        for version in ("first bundle", "updated bundle"):
+            with self.subTest(version=version):
+                for name in names:
+                    (bundle / name).write_text(version + ": " + name, encoding="utf-8")
+                with patch.dict(os.environ, CODEX_HOME=str(self.home)), \
+                     patch.object(sys, "argv", ["plugin_hook.py", "--refresh"]), \
+                     patch.object(self.shared, "__file__", str(bundle / "shared_knowledge.py")), \
+                     patch.object(self.hook, "run") as export, \
+                     patch.object(subprocess, "Popen") as process, \
+                     patch.object(subprocess, "run") as command:
+                    self.assertEqual(self.hook.main(), 0)
+                export.assert_not_called()
+                process.assert_not_called()
+                command.assert_not_called()
+                self.assertEqual({path.name for path in runtime.iterdir()}, set(names))
+                for name in names:
+                    self.assertEqual((runtime / name).read_bytes(), (bundle / name).read_bytes())
+                self.assertFalse((self.home / "shared-knowledge-export.log").exists())
+                self.assertEqual(config_path.read_bytes(), original_config)
+                self.assertEqual({path.name: path.read_bytes() for path in self.vault.iterdir()}, original_vault)
 
     def test_enabled_hook_refreshes_from_the_active_bundle_before_launching_runtime(self):
         self.configure(plugin_auto_export=True)

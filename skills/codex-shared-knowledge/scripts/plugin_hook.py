@@ -15,10 +15,14 @@ def main() -> int:
         return 0
     try:
         local = json.loads(config.read_text(encoding="utf-8"))
-        if not local.get("plugin_auto_export", False):
+        if "plugin_auto_export" not in local:
             return 0
         runtime = contained(home, home / "vaultgoblin" / "runtime")
-        if args.refresh or not (runtime / "export_background.py").is_file():
+        if args.refresh:
+            runtime = install_runtime(home)
+        if not local["plugin_auto_export"]:
+            return 0
+        if not (runtime / "export_background.py").is_file():
             runtime = install_runtime(home)
         return run(home, wait=False, launcher=runtime / "export_background.py")
     except (OSError, ValueError, TypeError, AttributeError) as error:
