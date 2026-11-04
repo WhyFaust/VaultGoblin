@@ -68,12 +68,17 @@ def check(binary, root, environment):
         })["plugin"]
         assert detail["onboardingSkill"]["name"] == "vaultgoblin:vaultgoblin-setup", detail
         assert len(detail["hooks"]) == 3, detail
+        interface = detail["summary"]["interface"]
+        for field in ("composerIcon", "logo"):
+            asset = Path(interface[field])
+            assert asset == root / "assets/vaultgoblin.png", interface
+            assert (package / "assets/vaultgoblin.png").read_bytes() == asset.read_bytes(), asset
     finally:
         process.terminate()
         process.wait(timeout=10)
         process.stdin.close()
         process.stdout.close()
-    print("Installed skill metadata, onboarding and all three untrusted plugin hooks verified.")
+    print("Installed skill metadata, icon, onboarding and all three untrusted plugin hooks verified.")
 
 
 def main():

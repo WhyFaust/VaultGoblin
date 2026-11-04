@@ -23,6 +23,8 @@
   "interface": {
     "displayName": "VaultGoblin",
     "shortDescription": "Shared Codex knowledge through Obsidian",
-    "category": "Productivity"
+    "category": "Productivity",
+    "composerIcon": "./assets/vaultgoblin.png",
+    "logo": "./assets/vaultgoblin.png"
   }
 }

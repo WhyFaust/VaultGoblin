@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/vaultgoblin.png" width="160" alt="Гоблин библиотекарь VaultGoblin">
+
 # 🧌 VaultGoblin
 
 **Гоблин, который таскает полезные знания между твоими ПК.**

@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/vaultgoblin.png" width="160" alt="VaultGoblin librarian mascot">
+
 # 🧌 VaultGoblin
 
 **A small goblin carrying useful knowledge between your computers.**
