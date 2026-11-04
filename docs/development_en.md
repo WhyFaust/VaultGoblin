@@ -30,7 +30,7 @@ and old deployed skill copy are not sources of code changes.
 Automated tests have been removed from the repository. Package validation is available:
 
 ```bash
-python -m pip install -r requirements-release.txt
+python -m pip install -r requirements-dev.txt
 python scripts/check_package.py
 ```
 

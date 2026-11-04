@@ -30,7 +30,7 @@
 Автоматические тесты удалены из репозитория. Доступна структурная проверка пакета:
 
 ```bash
-python -m pip install -r requirements-release.txt
+python -m pip install -r requirements-dev.txt
 python scripts/check_package.py
 ```
 
