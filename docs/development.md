@@ -6,100 +6,83 @@
 
 Два компонента независимы: навык общих знаний использует только стандартную
 библиотеку, а `pipeline/` содержит импорт и Wiki с отдельными зависимостями.
-Исходники меняют в Git-клоне. `.codex-plugin/plugin.json` содержит нативный манифест Codex с `hooks/hooks.json`
-и метаданными интерфейса. `extensions.com.openai.onboardingSkill` указывает на
-`skills/vaultgoblin-setup/SKILL.md`. Каталог `.agents/plugins/marketplace.json`
-публикует этот корень как плагин `vaultgoblin` в одноимённом marketplace.
+Исходники меняют в Git-клоне. `.codex-plugin/plugin.json` задаёт версию плагина,
+каталог навыков, `hooks/hooks.json` и метаданные интерфейса. Каталог
+`.agents/plugins/marketplace.json` публикует этот корень как `vaultgoblin`.
 
-Код выполняется из активной установки плагина. Setup и `SessionStart` обновляют
-`CODEX_HOME/vaultgoblin/runtime/` для задачи Windows. Этот runtime, кэш плагина
-и прежняя установленная копия навыка не являются источниками изменений.
+Код работает из активной установки плагина. Setup и `SessionStart` обновляют
+`CODEX_HOME/vaultgoblin/runtime/` для автоматического экспорта. Runtime, кэш
+плагина и прежняя установленная копия навыка не являются источниками изменений.
 
 | Каталог | Назначение |
 |---|---|
-| `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json` | Манифест плагина и каталог установки |
-| `hooks/` | Переносимые определения hooks и точка запуска |
+| `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json` | Манифест и каталог установки |
+| `hooks/` | Определения hooks и точка запуска |
 | `skills/vaultgoblin-setup/` | Первичная настройка, миграция и управление автоматизацией |
-| `skills/codex-shared-knowledge/scripts/` | Экспорт, FTS5-поиск, runtime и установка задачи Windows |
-| `skills/codex-shared-knowledge/tests/` | Регрессии экспорта, ID, области поиска и лимитов контекста |
-| `pipeline/scripts/` | Команды обработки и общие модули |
-| `pipeline/prompts/` | Короткие инструкции модели, без установки агента и справочника команд |
-| `pipeline/rules/` | Контракты заметок, таксономии и Wiki |
-| `pipeline/templates/wiki/` | RU/EN шаблоны Wiki |
+| `skills/codex-shared-knowledge/scripts/` | Экспорт, FTS5-поиск, runtime и задача Windows |
+| `pipeline/scripts/` | Обработка документов и общие модули |
+| `pipeline/prompts/`, `pipeline/rules/`, `pipeline/templates/wiki/` | Промпты, контракты и шаблоны |
 | `pipeline/examples/` | Примеры обычных заметок |
-| `pipeline/tests/` | Проверки Wiki, записи, индекса и обработки документов |
 | `docs/` | Парные руководства RU/EN |
 
-## Обновление интеграции
+## Структурная проверка
 
-Описание выбора и UI-метаданные обоих навыков версионируются рядом с их
-инструкциями. Меняйте исходные `SKILL.md` и `agents/openai.yaml`, затем проверяйте
-их наличие и содержимое в реально установленном пакете.
-
-Профильные hooks устанавливает Setup с `--profile-hooks`. Стабильный launcher
-копируется в `CODEX_HOME/scripts/`, а экспорт использует runtime вне кэша.
-Проверки используют временный профиль, замену каталога пакета и удаление старого
-кэша. Отдельно проверяются повторная настройка, владение обработчиками и
-отключение без vault. Изменение определения hook требует обычного доверия Codex.
-
-## Проверки
-
-Из корня репозитория, Linux/macOS:
+Автоматические тесты удалены из репозитория. Доступна структурная проверка пакета:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install pytest -r pipeline/requirements.txt
-.venv/bin/python -W error::EncodingWarning -X warn_default_encoding -m unittest discover -s skills/codex-shared-knowledge/tests -q
-cd pipeline
-../.venv/bin/python -X utf8 -m pytest -q
+python -m pip install -r requirements-dev.txt
+python scripts/check_package.py
 ```
 
-Windows PowerShell:
+Она проверяет структуру и метаданные пакета без модели и рабочего vault.
+Успешная проверка не подтверждает поведение экспорта, Wiki, наблюдателя, hooks,
+планировщика или внешних интеграций. Изменённое поведение проверяют отдельно
+в пределах конкретной задачи, используя временные данные и отдельный `CODEX_HOME`.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install pytest -r pipeline/requirements.txt
-.\.venv\Scripts\python.exe -W error::EncodingWarning -X warn_default_encoding -m unittest discover -s skills/codex-shared-knowledge/tests -q
-Push-Location pipeline
-..\.venv\Scripts\python.exe -X utf8 -m pytest -q
-Pop-Location
+Для чтения интерфейса CLI используйте `--help`. `doctor.py` читает местную
+конфигурацию; `memory_index.py build` индексирует настоящий vault. Настоящий Setup
+на Windows изменяет планировщик, поэтому эти операции не являются проверкой файлов.
+Внешнюю модель и пользовательский vault используют только в рамках поручения.
+
+## Автоматические релизы
+
+Версия в `.codex-plugin/plugin.json` и `metadata.version` обоих `SKILL.md`
+синхронизируются релизным workflow. Вручную их не повышайте. После попадания
+изменений в `main` workflow проверяет пакет и выбирает наибольшее повышение
+по Conventional Commits:
+
+| Коммит | Повышение |
+|---|---|
+| `fix:` или `perf:` | patch, например `1.2.3` → `1.2.4` |
+| `feat:` | minor, например `1.2.3` → `1.3.0` |
+| `!` после типа/области или footer `BREAKING CHANGE:` / `BREAKING-CHANGE:` | major, например `1.2.3` → `2.0.0` |
+| `docs:`, `chore:`, `ci:`, `build:`, `style:`, `refactor:` без breaking change | нового релиза нет |
+
+Первый выпуск использует текущую версию как базу; следующие — последний стабильный
+тег `vX.Y.Z`. При squash merge итоговый заголовок и описание коммита должны сохранять
+тип и отметку несовместимости. Если в диапазоне выпуска несколько типов коммитов,
+выбирается наибольшее повышение, а не последовательность нескольких релизов.
+
+Workflow записывает согласованные версии, создаёт коммит `chore(release): vX.Y.Z`,
+тег и GitHub Release с ZIP пакета. Номер установленной копии меняется после обновления
+плагина в Codex, а не сразу после публикации в GitHub. Для установки новой версии:
+
+```bash
+codex plugin marketplace upgrade vaultgoblin
+codex plugin add vaultgoblin@vaultgoblin
 ```
 
-Для плагина проверяйте манифест и marketplace, ссылки внутри пакета, обновление
-runtime и миграцию прежних hooks без изменения посторонних настроек. Используйте
-отдельные временные `CODEX_HOME` и vault. Настоящая установка Setup на Windows
-изменяет планировщик, поэтому не запускайте её как обычную проверку файлов.
+Начните новый чат и выполните Setup существующей установки. Местные пути и выбранный
+режим профильных hooks сохраняются. Их launcher и runtime находятся вне кэша;
+изменённые определения hooks по-прежнему требуют обычного доверия Codex.
 
-Отдельный job `plugin` устанавливает пакет через `codex-cli 0.166.0-alpha.6`
-в изолированном `CODEX_HOME` на Ubuntu и Windows, без вызовов модели. Он проверяет состав
-пакета, onboarding и обнаружение всех трёх хуков через API app-server. Доверие
-пользователя и настоящий планировщик Windows проверяются отдельно.
-
-CI запускает оба набора на Linux и Windows. Тесты используют временные данные
-и подменяют внешние вызовы. Они не подтверждают доступность NotebookLM, Google
-Drive, модели или доставку файлов выбранным механизмом синхронизации Obsidian.
-
-Для проверки CLI достаточно `--help`. `doctor.py` читает местную конфигурацию;
-`memory_index.py build` индексирует настоящий vault и не является обычным тестом.
-Прогон через внешнюю модель выполняйте отдельно по конкретной задаче.
-
-## Локальные данные
+## Локальные данные и изменения
 
 Не коммитьте `config.toml`, `shared-knowledge.json`, авторизацию, `.env`,
 `processed.json`, реестры дедупликации, staging, vault, экспорты памяти и базы
-SQLite. Они исключены корневым `.gitignore`. Пример настроек не содержит личных
-путей или учётных данных. Новые временные файлы создавайте через `tempfile`.
+SQLite. Они исключены корневым `.gitignore`. Примеры не содержат личных путей
+или учётных данных. Временные файлы создавайте через `tempfile`.
 
 При переносе скрипта обновляйте вызовы, инструкции навыка, планировщик и оба
 руководства. Для Wiki сохраняйте проверку снимка, ссылок и запись через writer.
 Новый индекс должен оставаться совместимым с уже установленными устройствами.
-
-## Проверка наблюдателя Linux
-
-```bash
-.venv/bin/python -m pip install -r skills/codex-shared-knowledge/requirements-watch.txt
-.venv/bin/python skills/codex-shared-knowledge/tests/check_memory_watcher.py
-```
-
-Интеграционная проверка использует временные файлы, включая атомарную замену
-и новую запись во время экспорта. Реальная память Codex не изменяется.

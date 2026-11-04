@@ -8,7 +8,7 @@
 
 Русский | [English](README_en.md)
 
-[![Tests](https://github.com/WhyFaust/VaultGoblin/actions/workflows/tests.yml/badge.svg)](https://github.com/WhyFaust/VaultGoblin/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/WhyFaust/VaultGoblin)](https://github.com/WhyFaust/VaultGoblin/releases)
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 [![MIT](https://img.shields.io/badge/License-MIT-6f9e37)](LICENSE)
 ![Local first](https://img.shields.io/badge/Local-first-7c5cbf)
@@ -97,7 +97,7 @@ codex plugin add vaultgoblin@vaultgoblin
 | Путь | Содержимое |
 |---|---|
 | [skills/codex-shared-knowledge/](skills/codex-shared-knowledge/SKILL.md) | Устанавливаемый навык, экспорт и ограниченный поиск общих знаний |
-| [pipeline/](pipeline/AGENTS.md) | Импорт, Wiki, правила, промпты, шаблоны и тесты |
+| [pipeline/](pipeline/AGENTS.md) | Импорт, Wiki, правила, промпты и шаблоны |
 | [docs/usage.md](docs/usage.md) | Установка, обновление и перенос между устройствами |
 | [docs/shared-knowledge.md](docs/shared-knowledge.md) | Формат тем, поиск, архив и восстановление |
 | [docs/pipeline.md](docs/pipeline.md) | Документы, NotebookLM, Wiki и обслуживание vault |
@@ -111,15 +111,18 @@ codex plugin add vaultgoblin@vaultgoblin
 Настройки, индекс и журнал остаются в `CODEX_HOME`, отдельно от кэша плагина.
 Авторизация, пути, заметки, экспорты и SQLite-базы в Git не входят.
 
-## 🧪 Проверка
+## 📦 Версии и обновления
 
 ```bash
-python3 -m unittest discover -s skills/codex-shared-knowledge/tests -q
+codex plugin marketplace upgrade vaultgoblin
+codex plugin add vaultgoblin@vaultgoblin
 ```
 
-Проверки импорта и Wiki требуют отдельного окружения; команды для Linux и Windows
-приведены в [руководстве разработчика](docs/development.md). CI проверяет оба
-компонента на Linux и Windows без реальных заметок и вызовов модели.
+После обновления откройте новый чат и выполните Setup существующей установки.
+Версия плагина и `metadata.version` обоих навыков повышаются вместе при выпуске.
+`feat` выпускает minor, `fix` и `perf` — patch, несовместимое изменение с `!`
+или `BREAKING CHANGE` — major. Подробности автоматического выпуска и структурной
+проверки пакета — в [руководстве разработчика](docs/development.md).
 
 ## 📜 Лицензия
 

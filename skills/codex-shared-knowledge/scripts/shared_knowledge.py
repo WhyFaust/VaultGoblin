@@ -131,7 +131,7 @@ def install(vault: Path, device: str, home: Path) -> dict:
     source = Path(__file__).resolve().parents[1]
     destination = contained(home, home / "skills" / "codex-shared-knowledge")
     for relative in ("SKILL.md", "scripts/shared_knowledge.py", "scripts/export_background.py",
-                     "scripts/install_export_task.ps1", "tests/test_shared_knowledge.py", "requirements-watch.txt"):
+                     "scripts/install_export_task.ps1", "agents/openai.yaml", "requirements-watch.txt"):
         target = contained(home, destination / relative)
         content = (source / relative).read_text(encoding="utf-8")
         if (source / relative).resolve() != target.resolve():

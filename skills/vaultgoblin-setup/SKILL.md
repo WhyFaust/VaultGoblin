@@ -1,10 +1,11 @@
 ---
 name: vaultgoblin-setup
-description: Set up or migrate the VaultGoblin Codex plugin, configure an existing local Obsidian vault and unique
-  device name, or repair or disable its knowledge export automation. Preserve local settings and use the installed
-  setup workflow; ordinary knowledge recall uses codex-shared-knowledge.
+description: Set up or migrate the VaultGoblin Codex plugin, configure an existing local Obsidian vault
+  and unique device name, or repair or disable its knowledge export automation. Preserve local settings
+  and use the installed setup workflow; ordinary knowledge recall uses codex-shared-knowledge.
 metadata:
   short-description: Configure VaultGoblin and its export automation
+  version: 0.1.1
 ---
 
 # Настройка VaultGoblin

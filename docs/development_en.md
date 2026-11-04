@@ -5,102 +5,84 @@
 ## Layout
 
 The components are independent. Shared knowledge uses only the standard library;
-`pipeline/` owns import and Wiki processing with separate dependencies. The
-Git clone is where source changes belong. `.codex-plugin/plugin.json` is the native
-Codex manifest with `hooks/hooks.json` and interface metadata.
-`extensions.com.openai.onboardingSkill` points to `skills/vaultgoblin-setup/SKILL.md`. The catalog
-`.agents/plugins/marketplace.json` exposes this root as the `vaultgoblin` plugin
-in the marketplace with the same name.
+`pipeline/` owns document import and Wiki processing with separate dependencies.
+Change sources in the Git clone. `.codex-plugin/plugin.json` defines the plugin
+version, skills directory, `hooks/hooks.json` and interface metadata. The catalog
+`.agents/plugins/marketplace.json` exposes this root as `vaultgoblin`.
 
 Code runs from the active plugin installation. Setup and `SessionStart` refresh
-`CODEX_HOME/vaultgoblin/runtime/` for the Windows task. That runtime, the plugin
-cache and the old deployed skill copy are not sources of code changes.
+`CODEX_HOME/vaultgoblin/runtime/` for automatic export. The runtime, plugin cache
+and old deployed skill copy are not sources of code changes.
 
 | Directory | Purpose |
 |---|---|
-| `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json` | Plugin manifest and installation catalog |
-| `hooks/` | Portable hook definitions and launcher |
+| `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json` | Manifest and installation catalog |
+| `hooks/` | Hook definitions and launcher |
 | `skills/vaultgoblin-setup/` | Initial setup, migration and automation controls |
-| `skills/codex-shared-knowledge/scripts/` | Export, FTS5 search, runtime and Windows task installation |
-| `skills/codex-shared-knowledge/tests/` | Export, IDs, search boundaries and context-budget regressions |
-| `pipeline/scripts/` | Processing commands and shared modules |
-| `pipeline/prompts/` | Short model instructions, without agent installation or command catalogs |
-| `pipeline/rules/` | Note, taxonomy and Wiki contracts |
-| `pipeline/templates/wiki/` | RU/EN Wiki templates |
+| `skills/codex-shared-knowledge/scripts/` | Export, FTS5 search, runtime and Windows task |
+| `pipeline/scripts/` | Document processing and shared modules |
+| `pipeline/prompts/`, `pipeline/rules/`, `pipeline/templates/wiki/` | Prompts, contracts and templates |
 | `pipeline/examples/` | Example regular notes |
-| `pipeline/tests/` | Wiki, writer, index and document-processing checks |
 | `docs/` | Paired RU/EN guides |
 
-## Upgrading the integration
+## Package validation
 
-Routing descriptions and UI metadata for both skills are versioned alongside
-their instructions. Update source `SKILL.md` and `agents/openai.yaml`, then
-check their presence and contents in the actual installed package.
-
-Setup installs profile hooks with `--profile-hooks`. The stable launcher is copied
-to `CODEX_HOME/scripts/`; exports use the runtime outside the cache. Tests use
-temporary profiles, package replacement and old-cache removal. They also cover
-repeat setup, handler ownership and disabling without a vault. Changed hook
-definitions remain subject to normal Codex trust review.
-
-## Checks
-
-From the repository root, Linux/macOS:
+Automated tests have been removed from the repository. Package validation is available:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install pytest -r pipeline/requirements.txt
-.venv/bin/python -W error::EncodingWarning -X warn_default_encoding -m unittest discover -s skills/codex-shared-knowledge/tests -q
-cd pipeline
-../.venv/bin/python -X utf8 -m pytest -q
+python -m pip install -r requirements-dev.txt
+python scripts/check_package.py
 ```
 
-Windows PowerShell:
+It checks package structure and metadata without a model or working vault. A pass
+does not establish export, Wiki, watcher, hook, scheduler or external-integration
+behavior. Verify changed behavior separately within the requested task, using
+temporary data and a separate `CODEX_HOME`.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install pytest -r pipeline/requirements.txt
-.\.venv\Scripts\python.exe -W error::EncodingWarning -X warn_default_encoding -m unittest discover -s skills/codex-shared-knowledge/tests -q
-Push-Location pipeline
-..\.venv\Scripts\python.exe -X utf8 -m pytest -q
-Pop-Location
+Use `--help` to inspect a CLI. `doctor.py` reads local configuration;
+`memory_index.py build` indexes the real vault. A real Windows Setup changes the
+scheduler, so these operations are not file validation. Use external models and
+the user's vault only within the user's task.
+
+## Automatic releases
+
+The release workflow synchronizes `.codex-plugin/plugin.json` and `metadata.version`
+in both `SKILL.md` files. Do not bump them manually. After changes reach `main`,
+the workflow validates the package and chooses the largest Conventional Commit bump:
+
+| Commit | Bump |
+|---|---|
+| `fix:` or `perf:` | patch, for example `1.2.3` → `1.2.4` |
+| `feat:` | minor, for example `1.2.3` → `1.3.0` |
+| `!` after type/scope or a `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer | major, for example `1.2.3` → `2.0.0` |
+| `docs:`, `chore:`, `ci:`, `build:`, `style:`, `refactor:` without a breaking change | no new release |
+
+The first release uses the current version as its base; later releases use the
+latest stable `vX.Y.Z` tag. For a squash merge, preserve the type and breaking marker
+in the final commit title and body. Multiple commit types produce the largest bump,
+not a sequence of releases.
+
+The workflow writes synchronized versions, creates a `chore(release): vX.Y.Z`
+commit, a tag and a GitHub Release containing the package ZIP. An installed copy
+changes version after a Codex plugin update, not immediately after publication.
+To install the new version:
+
+```bash
+codex plugin marketplace upgrade vaultgoblin
+codex plugin add vaultgoblin@vaultgoblin
 ```
 
-For the plugin, check its manifest and marketplace, package-relative references,
-runtime updates and migration of old hooks while preserving unrelated settings.
-Use separate temporary `CODEX_HOME` and vault directories. Real Setup on Windows
-changes Task Scheduler, so do not run it as a routine file validation.
+Start a new chat and run Setup for the existing installation. Local paths and the
+selected profile-hook mode are retained. Their launcher and runtime live outside
+the cache; changed hook definitions still require normal Codex trust.
 
-A separate `plugin` job installs the package with `codex-cli 0.166.0-alpha.6` in an
-isolated `CODEX_HOME` on Ubuntu and Windows, without model calls. It checks the
-installed metadata, onboarding and discovery of all three hooks using app-server.
-User hook trust and real Windows Task Scheduler behavior need separate checks.
-
-CI runs both suites on Linux and Windows. Tests use temporary data and mock external
-calls. They do not verify NotebookLM, Google Drive, model availability or file
-delivery through your chosen Obsidian synchronization mechanism.
-
-Use `--help` for CLI smoke checks. `doctor.py` reads local configuration;
-`memory_index.py build` indexes a real vault and is not a routine test. Run model
-integration checks separately for a specific task.
-
-## Local data
+## Local data and changes
 
 Do not commit `config.toml`, `shared-knowledge.json`, authentication, `.env`,
-`processed.json`, deduplication registries, staging, vault contents, memory exports
-or SQLite databases. The root `.gitignore` excludes them. Example settings contain
-no personal paths or credentials. Use `tempfile` for new temporary files.
+`processed.json`, deduplication registries, staging, the vault, memory exports or
+SQLite databases. The root `.gitignore` excludes them. Examples contain no personal
+paths or credentials. Create temporary files through `tempfile`.
 
-When moving a script, update callers, skill instructions, scheduling and both
-guides. Keep Wiki snapshot checks, link validation and writes through the writer.
-Index changes must remain compatible with existing installations.
-
-## Linux watcher check
-
-```bash
-.venv/bin/python -m pip install -r skills/codex-shared-knowledge/requirements-watch.txt
-.venv/bin/python skills/codex-shared-knowledge/tests/check_memory_watcher.py
-```
-
-The integration check uses temporary files, including atomic replacement and a
-new write during export. It never modifies real Codex memory.
+When relocating a script, update callers, skill instructions, scheduled tasks and
+both guides. Preserve Wiki snapshot/link checks and writes through the writer.
+A new index must remain compatible with already installed devices.
