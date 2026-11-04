@@ -20,6 +20,8 @@ def main() -> int:
         runtime = contained(home, home / "vaultgoblin" / "runtime")
         if args.refresh:
             runtime = install_runtime(home)
+        if local.get("plugin_profile_hooks") is True:
+            return 0
         if not local["plugin_auto_export"]:
             return 0
         if not (runtime / "export_background.py").is_file():

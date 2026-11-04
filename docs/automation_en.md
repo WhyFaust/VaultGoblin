@@ -81,6 +81,29 @@ Settings and knowledge are retained.
 Disabling without new `--vault` or `--device` values also works when the vault is
 unavailable: it does not check FTS5 or require an installed export runtime.
 
+### Profile hooks and upgrades
+
+If the client does not show VaultGoblin events in Settings > Hooks, run Setup
+from the installed plugin with `--profile-hooks`. It registers three events in
+`CODEX_HOME/hooks.json`, preserving unrelated handlers and a backup. On Windows,
+they use `pythonw.exe` and `CODEX_HOME/scripts/vaultgoblin_hook.py`.
+Review and trust these definitions through Codex's normal interface.
+
+The launcher and runtime live outside the plugin cache. Replacing or removing an
+old version directory leaves their paths available. The local `plugin_profile_hooks`
+setting retains the selected mode. Repeat Setup from the newly installed version
+to refresh the runtime and launcher while preserving owned definitions and other
+settings. Migration also recognizes existing owned profile hooks. Plugin events
+do not start duplicate exports in this mode.
+
+`--no-automation` disables export and removes owned profile handlers without
+requiring the vault or runtime. The selected profile mode is retained for the next
+enable operation. Codex retains control over hook trust. Changes to commands or
+client policy may require another review.
+
+Both skills ship their metadata in `SKILL.md` and `agents/openai.yaml`.
+Normal plugin upgrades receive these files from the new plugin version.
+
 ### Without the plugin
 
 After `install`, run from the permanent clone:

@@ -14,26 +14,17 @@ permissions:
 
 jobs:
   plugin:
-    runs-on: ubuntu-latest
-    env:
-      CODEX_HOME: ${{ github.workspace }}/../vaultgoblin-plugin
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7.0.1
-      - run: npm install --global @openai/codex@0.157.1
-      - run: mkdir -p "$CODEX_HOME"
-      - run: codex plugin marketplace add . --json
-      - run: codex plugin add vaultgoblin@vaultgoblin --json > installed-plugin.json
-      - run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          installed = json.loads(Path('installed-plugin.json').read_text(encoding='utf-8'))
-          root = Path(installed['installedPath'])
-          assert installed['pluginId'] == 'vaultgoblin@vaultgoblin', installed
-          assert (root / 'skills/codex-shared-knowledge/scripts/plugin_setup.py').is_file()
-          assert (root / 'skills/vaultgoblin-setup/SKILL.md').is_file()
-          assert (root / 'hooks/hooks.json').is_file()
-          PY
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - run: npm install --global @openai/codex@0.166.0-alpha.6
+      - run: python skills/codex-shared-knowledge/tests/check_plugin_install.py
 
   pipeline:
     strategy:

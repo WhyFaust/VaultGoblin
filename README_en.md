@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/vaultgoblin.png" width="160" alt="VaultGoblin librarian mascot">
+
 # 🧌 VaultGoblin
 
 **A small goblin carrying useful knowledge between your computers.**
@@ -54,6 +56,11 @@ On Windows, Setup configures silent exports at logon and every five minutes.
 Review and trust the new hooks in **Settings > Hooks** or `/hooks`; installing
 the plugin does not trust them automatically. Linux uses the event-driven watcher;
 macOS supports manual exports.
+
+Setup supports `--profile-hooks` for clients that do not discover plugin events.
+The launcher lives outside the plugin cache, and repeat Setup after an upgrade
+retains the selected mode. Skill descriptions and UI metadata ship in the package.
+See [upgrade details](docs/automation_en.md).
 
 After setup, open a new Codex chat. For example:
 

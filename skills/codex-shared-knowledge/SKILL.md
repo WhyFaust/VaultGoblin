@@ -1,6 +1,10 @@
 ---
 name: codex-shared-knowledge
-description: Recall prior decisions for substantial work in familiar projects, recurring failures, or cross-device history. Skip simple edits and general questions.
+description: Retrieve prior project decisions, recurring failure context, preferences, and cross-device history
+  from VaultGoblin's shared knowledge for substantial work in familiar projects. Use bounded, source-linked recall
+  and verify historical live-state claims; skip simple edits and general questions.
+metadata:
+  short-description: Recall shared project decisions across devices
 ---
 
 # Общие знания Codex
