@@ -1,0 +1,28 @@
+{
+  "name": "vaultgoblin",
+  "version": "0.1.1",
+  "description": "Local shared Codex knowledge across devices through your Obsidian vault.",
+  "author": {
+    "name": "WhyFaust"
+  },
+  "homepage": "https://github.com/WhyFaust/VaultGoblin",
+  "repository": "https://github.com/WhyFaust/VaultGoblin",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "memory",
+    "obsidian"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/vaultgoblin-setup/SKILL.md"
+    }
+  },
+  "interface": {
+    "displayName": "VaultGoblin",
+    "shortDescription": "Shared Codex knowledge through Obsidian",
+    "category": "Productivity"
+  }
+}

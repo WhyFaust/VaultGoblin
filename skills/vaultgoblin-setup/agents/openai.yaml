@@ -1,0 +1,5 @@
+interface:
+  display_name: "VaultGoblin Setup"
+  short_description: "Configure VaultGoblin and its export automation"
+  default_prompt: "Use $vaultgoblin-setup to configure or repair this device's VaultGoblin setup and verify its\
+    \ status."

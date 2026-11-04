@@ -6,9 +6,9 @@
 
 The components are independent. Shared knowledge uses only the standard library;
 `pipeline/` owns import and Wiki processing with separate dependencies. The
-Git clone is where source changes belong. Root `plugin.json` is the portable
-manifest; `extensions.com.openai` points to `hooks/hooks.json` and the onboarding
-skill `skills/vaultgoblin-setup/SKILL.md`. The catalog
+Git clone is where source changes belong. `.codex-plugin/plugin.json` is the native
+Codex manifest with `hooks/hooks.json` and interface metadata.
+`extensions.com.openai.onboardingSkill` points to `skills/vaultgoblin-setup/SKILL.md`. The catalog
 `.agents/plugins/marketplace.json` exposes this root as the `vaultgoblin` plugin
 in the marketplace with the same name.
 
@@ -18,7 +18,7 @@ cache and the old deployed skill copy are not sources of code changes.
 
 | Directory | Purpose |
 |---|---|
-| `plugin.json`, `.agents/plugins/marketplace.json` | Plugin manifest and installation catalog |
+| `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json` | Plugin manifest and installation catalog |
 | `hooks/` | Portable hook definitions and launcher |
 | `skills/vaultgoblin-setup/` | Initial setup, migration and automation controls |
 | `skills/codex-shared-knowledge/scripts/` | Export, FTS5 search, runtime and Windows task installation |
@@ -30,6 +30,18 @@ cache and the old deployed skill copy are not sources of code changes.
 | `pipeline/examples/` | Example regular notes |
 | `pipeline/tests/` | Wiki, writer, index and document-processing checks |
 | `docs/` | Paired RU/EN guides |
+
+## Upgrading the integration
+
+Routing descriptions and UI metadata for both skills are versioned alongside
+their instructions. Update source `SKILL.md` and `agents/openai.yaml`, then
+check their presence and contents in the actual installed package.
+
+Setup installs profile hooks with `--profile-hooks`. The stable launcher is copied
+to `CODEX_HOME/scripts/`; exports use the runtime outside the cache. Tests use
+temporary profiles, package replacement and old-cache removal. They also cover
+repeat setup, handler ownership and disabling without a vault. Changed hook
+definitions remain subject to normal Codex trust review.
 
 ## Checks
 
@@ -59,9 +71,10 @@ runtime updates and migration of old hooks while preserving unrelated settings.
 Use separate temporary `CODEX_HOME` and vault directories. Real Setup on Windows
 changes Task Scheduler, so do not run it as a routine file validation.
 
-A separate `plugin` job installs the package with `codex-cli 0.157.1` in an isolated
-`CODEX_HOME` on Ubuntu, without an API or model call. It checks package installation,
-not user hook trust or Windows Task Scheduler behavior.
+A separate `plugin` job installs the package with `codex-cli 0.166.0-alpha.6` in an
+isolated `CODEX_HOME` on Ubuntu and Windows, without model calls. It checks the
+installed metadata, onboarding and discovery of all three hooks using app-server.
+User hook trust and real Windows Task Scheduler behavior need separate checks.
 
 CI runs both suites on Linux and Windows. Tests use temporary data and mock external
 calls. They do not verify NotebookLM, Google Drive, model availability or file

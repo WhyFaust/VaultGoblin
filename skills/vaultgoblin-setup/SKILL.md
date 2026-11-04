@@ -1,6 +1,10 @@
 ---
 name: vaultgoblin-setup
-description: Set up or migrate VaultGoblin's Codex plugin, configure its local Obsidian vault and device name, or repair its export automation.
+description: Set up or migrate the VaultGoblin Codex plugin, configure an existing local Obsidian vault and unique
+  device name, or repair or disable its knowledge export automation. Preserve local settings and use the installed
+  setup workflow; ordinary knowledge recall uses codex-shared-knowledge.
+metadata:
+  short-description: Configure VaultGoblin and its export automation
 ---
 
 # Настройка VaultGoblin
@@ -31,6 +35,16 @@ Python 3.10+ с SQLite FTS5 должен быть доступен как `pytho
 Чужие обработчики, инструкции, память, настройки vault и ID тем сохраняются.
 Новые hooks нужно просмотреть и разрешить в Codex Settings > Hooks или `/hooks`.
 Не записывай `trusted_hash` и не представляй установку плагина как доверие hooks.
+
+Если клиент не обнаруживает hooks плагина, Setup с `--profile-hooks` регистрирует
+`SessionStart`, `Stop` и `SessionEnd` в hooks.json текущего профиля. Точка запуска
+хранится в `CODEX_HOME/scripts/vaultgoblin_hook.py`, runtime — в
+`CODEX_HOME/vaultgoblin/runtime/`. Эти пути сохраняются при замене кэша плагина.
+Setup запоминает выбранный режим и распознаёт уже существующие собственные
+профильные hooks. При обновлении повторяй Setup из новой установленной версии.
+Профильный режим предотвращает повторный экспорт через плагинные события.
+Проверь определения обычным способом в Settings > Hooks. Отключение через
+`--no-automation` работает и для профильных hooks без доступного vault.
 
 На Linux для поздней записи памяти используй событийный `watch` и пользовательский
 сервис из `docs/automation.md` в корне плагина. Установка зависимости и сервиса

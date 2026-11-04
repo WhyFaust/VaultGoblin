@@ -1,0 +1,5 @@
+interface:
+  display_name: "Shared Codex Knowledge"
+  short_description: "Recall shared project decisions across devices"
+  default_prompt: "Use $codex-shared-knowledge to retrieve relevant prior decisions and source references for this\
+    \ task."
