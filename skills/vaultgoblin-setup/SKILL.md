@@ -5,7 +5,7 @@ description: Set up or migrate the VaultGoblin Codex plugin, configure an existi
   and use the installed setup workflow; ordinary knowledge recall uses codex-shared-knowledge.
 metadata:
   short-description: Configure VaultGoblin and its export automation
-  version: 0.1.1
+  version: 0.2.0
 ---
 
 # Настройка VaultGoblin

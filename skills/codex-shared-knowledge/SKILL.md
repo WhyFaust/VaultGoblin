@@ -5,7 +5,7 @@ description: Retrieve prior project decisions, recurring failure context, prefer
   source-linked recall and verify historical live-state claims; skip simple edits and general questions.
 metadata:
   short-description: Recall shared project decisions across devices
-  version: 0.1.1
+  version: 0.2.0
 ---
 
 # Общие знания Codex
