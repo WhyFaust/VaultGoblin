@@ -28,8 +28,9 @@ Useful practices from the comparison:
   are separate. Maintenance must not mutate Wiki sources or generated exports.
 - Small automation handlers: hooks export prepared memory; a timer catches delayed
   updates, while context retrieval follows the task.
-- Failure-based tests: filename conflicts, interrupted manifests, parallel search
-  and partial writer results need specific regressions.
+- Failure-based verification: changes must account for filename conflicts,
+  interrupted manifests, parallel search and partial writer results.
+  Package validation does not exercise those scenarios.
 - One code source and a short second-device setup, without independently maintained
   script copies.
 

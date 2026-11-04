@@ -8,7 +8,7 @@
 
 [Русский](README.md) | English
 
-[![Tests](https://github.com/WhyFaust/VaultGoblin/actions/workflows/tests.yml/badge.svg)](https://github.com/WhyFaust/VaultGoblin/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/WhyFaust/VaultGoblin)](https://github.com/WhyFaust/VaultGoblin/releases)
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 [![MIT](https://img.shields.io/badge/License-MIT-6f9e37)](LICENSE)
 ![Local first](https://img.shields.io/badge/Local-first-7c5cbf)
@@ -97,7 +97,7 @@ setup snapshots are backed up locally and removed from the vault. See
 | Path | Contents |
 |---|---|
 | [skills/codex-shared-knowledge/](skills/codex-shared-knowledge/SKILL.md) | Installable skill, export and bounded shared-knowledge search |
-| [pipeline/](pipeline/AGENTS.md) | Import, Wiki, rules, prompts, templates and tests |
+| [pipeline/](pipeline/AGENTS.md) | Import, Wiki, rules, prompts and templates |
 | [docs/usage_en.md](docs/usage_en.md) | Setup, updates and use across devices |
 | [docs/shared-knowledge_en.md](docs/shared-knowledge_en.md) | Topic format, search, archives and recovery |
 | [docs/pipeline_en.md](docs/pipeline_en.md) | Documents, NotebookLM, Wiki and vault maintenance |
@@ -111,15 +111,18 @@ installation; a previous `repository_path` does not redirect it to an old clone.
 Settings, index and logs stay in `CODEX_HOME`, outside the plugin cache.
 Authentication, local paths, notes, exports and SQLite databases do not belong in Git.
 
-## 🧪 Checks
+## 📦 Versions and updates
 
 ```bash
-python3 -m unittest discover -s skills/codex-shared-knowledge/tests -q
+codex plugin marketplace upgrade vaultgoblin
+codex plugin add vaultgoblin@vaultgoblin
 ```
 
-Import and Wiki checks need a separate environment; see the Linux and Windows
-commands in the [development guide](docs/development_en.md). CI tests both
-components on Linux and Windows without real notes or model calls.
+After updating, start a new chat and run Setup for the existing installation.
+The plugin version and both skills' `metadata.version` advance together on release.
+`feat` produces a minor release, `fix` and `perf` a patch, and a breaking change
+marked with `!` or `BREAKING CHANGE` a major. See the
+[development guide](docs/development_en.md) for automatic releases and package validation.
 
 ## 📜 License
 

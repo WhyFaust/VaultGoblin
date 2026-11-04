@@ -6,9 +6,10 @@
 paths and reproduced defects using temporary data. Assumed load: one user,
 Windows/Linux, multiple chats and two devices sharing an Obsidian vault.
 
-The initial revision passed 57 shared-knowledge tests and 250 pipeline tests.
-The first audit found 12 defects; a second pass added two more. Each now has a regression or an
-expanded relevant check. Fixes are verified by rerunning the suites.
+The first audit found 12 defects; a second pass added two more. This is a
+historical report for the stated date. Automated tests were later removed from
+the repository. Current releases use package validation, which does not establish
+the runtime behavior listed here.
 
 | # | Priority | Reproduced failure | Fix |
 |---|---|---|---|
@@ -27,17 +28,17 @@ expanded relevant check. Fixes are verified by rerunning the suites.
 | 13 | P2 | `~/vault` worked for reading but failed for writing and snapshot checks | The loader, commands and low-level guards normalize vault paths consistently |
 | 14 | P2 | Without expected-state, `notes_folder="../outside"` let the general writer escape | Destination containment is checked before mkdir and again inside atomic_copy_note without a snapshot |
 
-Regressions live in
-[`test_data_boundaries.py`](../pipeline/tests/test_data_boundaries.py),
-[`test_wiki_compile.py`](../pipeline/tests/test_wiki_compile.py) and
-[`test_shared_knowledge.py`](../skills/codex-shared-knowledge/tests/test_shared_knowledge.py).
+The affected implementation lives in
+[`vault_writer.py`](../pipeline/scripts/vault_writer.py),
+[`wiki_compile.py`](../pipeline/scripts/wiki_compile.py) and
+[`shared_knowledge.py`](../skills/codex-shared-knowledge/scripts/shared_knowledge.py).
 
 ## Additional improvements
 
 - Retired native topics remain archived with stable IDs. An upgrade restores
   verified topic backups owned by the current device.
-- Index paths are portable across Windows and Linux. CI tests both components
-  on both systems. The rclone download path uses Python rather than Bash.
+- Index paths are portable across Windows and Linux. The rclone download path
+  uses Python rather than Bash.
 - Temporary files use the OS temporary directory and are cleaned after Codex calls.
   Diagnostics check the selected CLI without requiring every optional integration.
 - Duplicate instructions, the old installer, a legacy embedding template and a
@@ -50,7 +51,7 @@ Regressions live in
 ## Validation limits
 
 Live models, NotebookLM, Google Drive and real file delivery through synchronization
-were not tested. Linux runtime is checked by CI separately from local Windows runs.
+were not tested. Historical results do not establish current Linux or Windows behavior.
 Not every integration helper was read in full. The environment prevented junction
 testing. Direct callback execution does not prove Codex trust or lifecycle delivery;
 those are separate checks.
